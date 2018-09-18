@@ -1,9 +1,11 @@
 const express = require('express');
 const AWS = require('aws-sdk');
 const uuidv4 = require('uuid/v4');
+const cors = require('cors');
 
 const S3 = new AWS.S3();
 const app = express();
+app.use(cors());
 
 const config = {
     port : process.env.PORT || 3003,

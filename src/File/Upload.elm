@@ -19,10 +19,12 @@ port module File.Upload
 
 import Drag
 import File.File as File
+import File.SignedUrl as SignedUrl
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onWithOptions)
 import Json.Decode as Decode
+import Json.Encode as Encode
 import Mouse
 
 
@@ -34,13 +36,6 @@ port browseClick : String -> Cmd msg
 
 
 ---- STATE ----
-
-
-type alias AttachmentData a =
-    { selected : Bool
-    , editMode : Bool
-    , attachment : a
-    }
 
 
 type State
@@ -59,7 +54,7 @@ type Config msg
 
 type alias ConfigRec msg =
     { onChangeFilesMsg : String -> List Drag.File -> msg
-    , uploadFileMsg : File.FilePortRequest -> msg
+    , uploadFileMsg : File.FileReadPortRequest -> msg
     , softDeleteSelectedMsg : msg
     , browseClickMsg : String -> msg
     , dragOverMsg : Drag.Event -> msg
@@ -140,7 +135,7 @@ maximumFileSize size (Config configRec) =
         { configRec | maximumFileSize = size }
 
 
-uploadFile : (File.FilePortRequest -> msg) -> Config msg -> Config msg
+uploadFile : (File.FileReadPortRequest -> msg) -> Config msg -> Config msg
 uploadFile msg (Config configRec) =
     Config <|
         { configRec | uploadFileMsg = msg }
@@ -164,20 +159,20 @@ dropActive isActive (State state) =
 
 -- onChangeFiles : List Drag.File
 {- -}
--- fileChanges : List Drag.File -> List ( File.FilePortRequest, Decode.Value )
+-- fileChanges : List Drag.File -> List ( File.FileReadPortRequest, Decode.Value )
 -- fileChanges files =
 --     List.filterMap decodeData files
--- decodeData : Drag.File -> Maybe ( File.FilePortRequest, Decode.Value )
+-- decodeData : Drag.File -> Maybe ( File.FileReadPortRequest, Decode.Value )
 -- decodeData { data } =
 --     data
 --         |> Decode.decodeValue File.decoder
 --         |> Result.toMaybe
 --         |> Maybe.map (\x -> ( x, data ))
--- upload : Config msg -> File.FilePortRequest -> String -> msg
--- upload config FilePortRequest requestId =
+-- upload : Config msg -> File.FileReadPortRequest -> String -> msg
+-- upload config FileReadPortRequest requestId =
 --     let
 --         payload =
---             File.encoder FilePortRequest
+--             File.encoder FileReadPortRequest
 --     in
 --     Cmd.none
 -- requestAttachmentsInsert : String -> JE.Value -> (APIData Types.AttachmentWithUsername -> msg) -> Cmd msg
@@ -191,7 +186,7 @@ dropActive isActive (State state) =
 --                 |> Phoenix.push (socketUrl backendUrl)
 --     in
 --     Cmd.batch [ progressCmd msg, apiCallCmd ]
--- API.requestAttachmentsInsert model.backendUrl payload (InsertResult FilePortRequestV)
+-- API.requestAttachmentsInsert model.backendUrl payload (InsertResult FileReadPortRequestV)
 ---- VIEW ----
 
 

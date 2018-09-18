@@ -3,6 +3,7 @@ module Main exposing (..)
 import Drag
 import File.File as File
 import File.List as FileList
+import File.SignedUrl as SignedUrl exposing (SignedUrl)
 import File.Upload as Upload
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -25,8 +26,9 @@ signedUrlProviderUrl =
 type alias Model =
     { requestId : Int
     , upload : Upload.State
-    , readRequests : List File.FilePortRequest
-    , responses : List File.FilePortResponse
+    , reading : List File.FileReadPortRequest
+    , signing : List File.FileReadPortResponse
+    , uploading : List File.FileSigned
     }
 
 
@@ -34,8 +36,9 @@ init : ( Model, Cmd Msg )
 init =
     ( { upload = Upload.init
       , requestId = 1
-      , readRequests = []
-      , responses = []
+      , reading = []
+      , signing = []
+      , uploading = []
       }
     , Cmd.none
     )
@@ -49,46 +52,16 @@ type Msg
     = NoOp
     | OpenFileBrowser String
     | OnChangeFiles String (List Drag.File)
-    | UploadFile File.FilePortRequest
-    | OnFileRead (Result String File.FilePortResponse)
+    | OnFileRead (Result String File.FileReadPortResponse)
     | DragOver Drag.Event
     | DragLeave Drag.Event
     | Drop Drag.Event
-    | GotSignedUrl (Result Http.Error SignedUrl)
+    | GotSignedUrl File.FileReadPortResponse (Result Http.Error SignedUrl)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        OpenFileBrowser inputID ->
-            ( model, Upload.browseClick inputID )
-
-        OnChangeFiles inputId files ->
-            let
-                readRequests =
-                    File.requests (model.requestId + 1) inputId files
-            in
-            ( { model
-                | readRequests = readRequests
-                , requestId = model.requestId + List.length readRequests
-              }
-            , File.readCmds readRequests
-            )
-
-        UploadFile file ->
-            ( model, Cmd.none )
-
-        OnFileRead (Ok response) ->
-            ( { model
-                | responses = response :: model.responses
-                , readRequests = File.removeRequest response model.readRequests
-              }
-            , Task.attempt GotSignedUrl getSignedUrl
-            )
-
-        OnFileRead (Err err) ->
-            ( model, Cmd.none )
-
         DragOver event ->
             ( { model | upload = Upload.dropActive True model.upload }
             , Cmd.none
@@ -99,57 +72,73 @@ update msg model =
             , Cmd.none
             )
 
+        OpenFileBrowser inputID ->
+            ( model, Upload.browseClick inputID )
+
+        OnChangeFiles inputId files ->
+            let
+                reading =
+                    File.requests (model.requestId + 1) inputId files
+            in
+            ( { model
+                | reading = reading
+                , requestId = model.requestId + List.length reading
+              }
+            , File.readCmds reading
+            )
+
         Drop { dataTransfer } ->
             let
-                readRequests =
+                reading =
                     dataTransfer
                         |> .files
                         |> File.requests (model.requestId + 1) (Upload.getInputId uploadConfig)
             in
             ( { model
-                | readRequests = readRequests
-                , requestId = model.requestId + List.length readRequests
+                | reading = reading
+                , requestId = model.requestId + List.length reading
                 , upload = Upload.dropActive False model.upload
               }
-            , File.readCmds readRequests
+            , File.readCmds reading
             )
 
-        GotSignedUrl (Ok { signedUrl }) ->
+        OnFileRead (Ok response) ->
+            ( { model
+                | signing = response :: model.signing
+                , reading = File.removeReadRequest response model.reading
+              }
+            , Task.attempt (GotSignedUrl response) getSignedUrl
+            )
+
+        OnFileRead (Err err) ->
             ( model, Cmd.none )
 
-        GotSignedUrl (Err e) ->
+        GotSignedUrl response (Ok signedUrl) ->
+            let
+                signed =
+                    File.signed response signedUrl
+            in
+            ( { model
+                | signing = File.removeSigningRequest signed model.signing
+                , uploading = signed :: model.uploading
+              }
+            , File.uploadCmds [ signed ]
+            )
+
+        GotSignedUrl _ (Err e) ->
             ( model, Cmd.none )
 
         NoOp ->
             ( model, Cmd.none )
 
 
-type alias SignedUrl =
-    { signedUrl : String
-    , reference : String
-    }
-
-
 getSignedUrl : Task Http.Error SignedUrl
 getSignedUrl =
-    Http.get signedUrlProviderUrl
-        (Pipeline.decode SignedUrl
-            |> Pipeline.required "signedUrl" Decode.string
-            |> Pipeline.required "reference" Decode.string
-        )
+    Http.get signedUrlProviderUrl SignedUrl.decoder
         |> Http.toTask
 
 
 
--- uploadFile : String -> File.FilePortRequest -> Task e String
--- uploadFile file =
---     getSignedUploadUrl
---         |> Task.andThen
---             (\signedUploadUrl ->
---                 Task.succeed "test"
---             )
--- File.encoder file
--- |> always Cmd.none
 ---- VIEW ----
 
 
@@ -165,10 +154,15 @@ uploadConfig =
 
 view : Model -> Html Msg
 view model =
-    div [ style [ ( "width", "700px" ), ( "border", "1px solid #000" ) ] ]
+    div
+        [ style
+            [ ( "width", "700px" )
+            , ( "border", "1px solid #000" )
+            ]
+        ]
         [ Upload.view model.upload uploadConfig
         , hr [] []
-        , FileList.view model.responses
+        , FileList.view model.signing
         ]
 
 
@@ -176,7 +170,7 @@ view model =
 ---- SUBSCRIPTIONS ----
 
 
-fileContentRead : List File.FilePortRequest -> Sub (Result String File.FilePortResponse)
+fileContentRead : List File.FileReadPortRequest -> Sub (Result String File.FileReadPortResponse)
 fileContentRead requests =
     File.fileContentRead (Decode.decodeValue (File.filePortDecoder requests))
 
@@ -184,7 +178,7 @@ fileContentRead requests =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Sub.map OnFileRead (fileContentRead model.readRequests) ]
+        [ Sub.map OnFileRead (fileContentRead model.reading) ]
 
 
 

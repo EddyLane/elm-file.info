@@ -17,6 +17,13 @@ app.ports.readFileContent.subscribe(([id, _inputId, file]) => {
 
 });
 
+app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
+
+    fetch(base64Data)
+        .then(res => res.blob())
+        .then(blob => console.log(blob));
+});
+
 app.ports.browseClick.subscribe((inputId) => {
 
     const element = document.getElementById(inputId);
