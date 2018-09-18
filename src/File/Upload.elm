@@ -5,7 +5,9 @@ module File.Upload
         , backendUrl
         , browseFiles
         , config
+        , getInputId
         , init
+        , inputId
         , maximumFileSize
         , onChangeFiles
         , update
@@ -46,7 +48,7 @@ type Config msg
 
 
 type alias ConfigRec msg =
-    { onChangeFilesMsg : List Drag.File -> msg
+    { onChangeFilesMsg : String -> List Drag.File -> msg
     , uploadFileMsg : File.FilePortRequest -> msg
     , softDeleteSelectedMsg : msg
     , browseClickMsg : msg
@@ -55,6 +57,7 @@ type alias ConfigRec msg =
     , dropMsg : Drag.Event -> msg
     , maximumFileSize : Int
     , backendUrl : String
+    , inputId : String
     }
 
 
@@ -69,7 +72,7 @@ init =
 config : msg -> Config msg
 config noOpMsg =
     Config <|
-        { onChangeFilesMsg = always noOpMsg
+        { onChangeFilesMsg = always (always noOpMsg)
         , softDeleteSelectedMsg = noOpMsg
         , browseClickMsg = noOpMsg
         , dragOverMsg = always noOpMsg
@@ -78,13 +81,25 @@ config noOpMsg =
         , uploadFileMsg = always noOpMsg
         , maximumFileSize = 5000
         , backendUrl = ""
+        , inputId = "elm-file-upload-input"
         }
 
 
-onChangeFiles : (List Drag.File -> msg) -> Config msg -> Config msg
+onChangeFiles : (String -> List Drag.File -> msg) -> Config msg -> Config msg
 onChangeFiles msg (Config configRec) =
     Config <|
         { configRec | onChangeFilesMsg = msg }
+
+
+inputId : String -> Config msg -> Config msg
+inputId inputId (Config configRec) =
+    Config <|
+        { configRec | inputId = inputId }
+
+
+getInputId : Config msg -> String
+getInputId (Config { inputId }) =
+    inputId
 
 
 softDelete : msg -> Config msg -> Config msg
@@ -211,38 +226,46 @@ view (State state) (Config config) =
             , Drag.onDrop config.dropMsg
             ]
           <|
-            List.concat
-                [ [ div [ class "tile-hd" ]
-                        [ div [ class "tile-name" ]
-                            [ text "Files" ]
-                        ]
-                  , p [ class "upload-file-container" ]
-                        [ i [ class "fa fa-upload" ]
-                            []
-                        , text "Drop your files here or "
-                        , a
-                            [ attribute "data-action" "choose-files"
-                            , href "javascript:void(0)"
-                            , onClick config.browseClickMsg
-                            ]
-                            [ text "browse for a file " ]
-                        , text "to upload."
-                        ]
-                  ]
-                , []
-                , []
-                , [ Html.form [ id "file-upload-form" ]
-                        [ input
-                            [ attribute "multiple" ""
-                            , type_ "file"
-                            , id "file-upload-input"
-                            , onWithOptions "change" onOptions <|
-                                Decode.map config.onChangeFilesMsg <|
-                                    Decode.at [ "target", "files" ] <|
-                                        Drag.fileListDecoder Drag.fileDecoder
-                            ]
-                            []
-                        ]
-                  ]
+            [ div [ class "tile-hd" ]
+                [ div [ class "tile-name" ]
+                    [ text "Files" ]
                 ]
+            , p [ class "upload-file-container" ]
+                [ i [ class "fa fa-upload" ]
+                    []
+                , text "Drop your files here or "
+                , a
+                    [ attribute "data-action" "choose-files"
+                    , href "javascript:void(0)"
+                    , onClick config.browseClickMsg
+                    ]
+                    [ text "browse for a file " ]
+                , text "to upload."
+                ]
+            ]
+        , fileInput config
         ]
+
+
+fileInput : ConfigRec msg -> Html msg
+fileInput { inputId, onChangeFilesMsg } =
+    input
+        [ attribute "multiple" ""
+        , type_ "file"
+        , id inputId
+        , onWithOptions
+            "change"
+            { stopPropagation = False
+            , preventDefault = False
+            }
+            (fileInputDecoder inputId onChangeFilesMsg)
+        ]
+        []
+
+
+fileInputDecoder : String -> (String -> List Drag.File -> msg) -> Decode.Decoder msg
+fileInputDecoder inputId msg =
+    Drag.fileDecoder
+        |> Drag.fileListDecoder
+        |> Decode.at [ "target", "files" ]
+        |> Decode.map (msg inputId)

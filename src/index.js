@@ -1,53 +1,34 @@
 import './main.css';
-import { Main } from './Main.elm';
+import {Main} from './Main.elm';
 import registerServiceWorker from './registerServiceWorker';
 
 const app = Main.embed(document.getElementById('root'));
 
 
-app.ports.readFileContent.subscribe((file) => {
+app.ports.readFileContent.subscribe((request) => {
 
+    const {id, data: {name, inputId}} = JSON.parse(request);
+    const element = document.getElementById(inputId);
 
-    (function ({ id, data: { name } }) {
+    if (!element && element.files) {
+        console.error(`invalid inputId ${inputId}`);
+        return;
+    }
 
-        const element = document.getElementById('file-upload-input');
+    [...element.files].forEach((file) => {
 
-        if (!element && element.files) {
-            console.error("Invalid element"); s
+        if (file.name !== name) {
             return;
         }
 
-        for (var i = 0; i < element.files.length; i++) {
+        const reader = new FileReader();
 
-            let file = element.files[i];
+        reader.onload = (({target: {result}}) => {
+            app.ports.fileContentRead.send({id, result});
+        });
 
-            if (file.name === name) {
-
-                var reader = new FileReader();
-
-                reader.onload = (function ({ target: { result } }) {
-
-                    // We call the `fileContentRead` port with the file data
-                    // which will be sent to our Elm runtime via Subscriptions.
-                    app.ports.fileContentRead.send({
-                        id,
-                        data: {
-                            contents: result,
-                            fileName: file.name
-                        }
-                    });
-
-                });
-
-                // Connect our FileReader with the file that was selected in our `input` node.
-                reader.readAsDataURL(file);
-
-            }
-
-        }
-
-    })(JSON.parse(file))
-
+        reader.readAsDataURL(file);
+    });
 
 
 });
