@@ -33,11 +33,14 @@ app.ports.readFileContent.subscribe((request) => {
 
 });
 
-app.ports.browseClick.subscribe(() => {
-    const element = document.getElementById('file-upload-input');
+app.ports.browseClick.subscribe((inputId) => {
+
+    const element = document.getElementById(inputId);
+
     if (element) {
         element.click();
     }
+
 });
 
 registerServiceWorker();

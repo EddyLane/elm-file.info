@@ -13,7 +13,7 @@ import Task exposing (Task)
 ---- PORTS ----
 
 
-port browseClick : () -> Cmd msg
+port browseClick : String -> Cmd msg
 
 
 port uploadFile : String -> Cmd msg
@@ -48,7 +48,7 @@ init =
 
 type Msg
     = NoOp
-    | OpenFileBrowser
+    | OpenFileBrowser String
     | OnChangeFiles String (List Drag.File)
     | UploadFile File.FilePortRequest
     | OnFileRead (Result String File.FilePortResponse)
@@ -61,8 +61,8 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        OpenFileBrowser ->
-            ( model, browseClick () )
+        OpenFileBrowser inputID ->
+            ( model, browseClick inputID )
 
         OnChangeFiles inputId files ->
             let

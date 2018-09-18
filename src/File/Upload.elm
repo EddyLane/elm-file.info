@@ -51,7 +51,7 @@ type alias ConfigRec msg =
     { onChangeFilesMsg : String -> List Drag.File -> msg
     , uploadFileMsg : File.FilePortRequest -> msg
     , softDeleteSelectedMsg : msg
-    , browseClickMsg : msg
+    , browseClickMsg : String -> msg
     , dragOverMsg : Drag.Event -> msg
     , dragLeaveMsg : Drag.Event -> msg
     , dropMsg : Drag.Event -> msg
@@ -74,7 +74,7 @@ config noOpMsg =
     Config <|
         { onChangeFilesMsg = always (always noOpMsg)
         , softDeleteSelectedMsg = noOpMsg
-        , browseClickMsg = noOpMsg
+        , browseClickMsg = always noOpMsg
         , dragOverMsg = always noOpMsg
         , dragLeaveMsg = always noOpMsg
         , dropMsg = always noOpMsg
@@ -108,7 +108,7 @@ softDelete msg (Config configRec) =
         { configRec | softDeleteSelectedMsg = msg }
 
 
-browseFiles : msg -> Config msg -> Config msg
+browseFiles : (String -> msg) -> Config msg -> Config msg
 browseFiles msg (Config configRec) =
     Config <|
         { configRec | browseClickMsg = msg }
@@ -237,7 +237,7 @@ view (State state) (Config config) =
                 , a
                     [ attribute "data-action" "choose-files"
                     , href "javascript:void(0)"
-                    , onClick config.browseClickMsg
+                    , onClick (config.browseClickMsg config.inputId)
                     ]
                     [ text "browse for a file " ]
                 , text "to upload."
