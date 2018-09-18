@@ -2,12 +2,13 @@ port module File.File
     exposing
         ( FilePortRequest
         , FilePortResponse
+        , base64Encoded
         , encoder
         , file
         , fileContentRead
         , filePortDecoder
+        , isImage
         , readCmds
-        , readFileContent
         , removeRequest
         , request
         , requests
@@ -27,7 +28,7 @@ import Json.Encode as Encode
 port fileContentRead : (Encode.Value -> msg) -> Sub msg
 
 
-port readFileContent : String -> Cmd msg
+port readFileContent : ( Int, String, Decode.Value ) -> Cmd msg
 
 
 
@@ -51,7 +52,8 @@ requests requestId inputId =
 readCmds : List FilePortRequest -> Cmd msg
 readCmds requests =
     requests
-        |> List.map (encoder >> Encode.encode 0 >> readFileContent)
+        --        |> List.map (encoder >> Encode.encode 0 >> readFileContent)
+        |> List.map (\(FilePortRequest id inputId request) -> readFileContent ( id, inputId, request.data ))
         |> Cmd.batch
 
 
@@ -65,13 +67,19 @@ request =
     FilePortRequest
 
 
-
---
+isImage : FilePortResponse -> Bool
+isImage (FilePortResponse (FilePortRequest _ _ { typeMIME }) _) =
+    String.startsWith "image" typeMIME
 
 
 file : FilePortResponse -> Drag.File
 file (FilePortResponse (FilePortRequest _ _ file) _) =
     file
+
+
+base64Encoded : FilePortResponse -> String
+base64Encoded (FilePortResponse _ base64Encoded) =
+    base64Encoded
 
 
 

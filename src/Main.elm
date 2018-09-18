@@ -109,9 +109,8 @@ update msg model =
                 e =
                     Debug.log "e" event
 
-                files_ =
-                    List.map (\f -> Debug.log "file" f.data) (Debug.log "files" event.dataTransfer.files)
-
+                --                files_ =
+                --                    List.map (\f -> Debug.log "file" f.data) (Debug.log "files" event.dataTransfer.files)
                 files =
                     event.dataTransfer.files
 
@@ -170,8 +169,9 @@ uploadConfig =
 
 view : Model -> Html Msg
 view model =
-    div [ style [ ( "width", "700px" ) ] ]
+    div [ style [ ( "width", "700px" ), ( "border", "1px solid #000" ) ] ]
         [ Upload.view model.upload uploadConfig
+        , hr [] []
         , FileList.view model.responses
         ]
 

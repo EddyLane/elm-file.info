@@ -7,10 +7,12 @@ import Html.Attributes exposing (..)
 
 view : List File.FilePortResponse -> Html msg
 view files =
-    table [ class "s3-files table table-condensed table-files" ]
+    table []
         [ thead []
             [ tr []
-                [ th [] [ text "Filename" ] ]
+                [ th [] []
+                , th [] [ text "Filename" ]
+                ]
             ]
         , tbody [] (List.map viewRow files)
         ]
@@ -19,7 +21,16 @@ view files =
 viewRow : File.FilePortResponse -> Html msg
 viewRow response =
     tr []
-        [ File.file response
+        [ viewThumbnail response
+        , File.file response
             |> .name
             |> text
         ]
+
+
+viewThumbnail : File.FilePortResponse -> Html msg
+viewThumbnail file =
+    if File.isImage file then
+        img [ src (File.base64Encoded file) ] []
+    else
+        text ""
