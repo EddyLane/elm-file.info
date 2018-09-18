@@ -3,7 +3,6 @@ port module File.File
         ( FilePortRequest
         , FilePortResponse
         , base64Encoded
-        , encoder
         , file
         , fileContentRead
         , filePortDecoder
@@ -33,7 +32,6 @@ port readFileContent : ( Int, String, Decode.Value ) -> Cmd msg
 
 
 ---- DATA ----
--- OPAQUE
 
 
 type FilePortRequest
@@ -52,7 +50,6 @@ requests requestId inputId =
 readCmds : List FilePortRequest -> Cmd msg
 readCmds requests =
     requests
-        --        |> List.map (encoder >> Encode.encode 0 >> readFileContent)
         |> List.map (\(FilePortRequest id inputId request) -> readFileContent ( id, inputId, request.data ))
         |> Cmd.batch
 
@@ -83,7 +80,6 @@ base64Encoded (FilePortResponse _ base64Encoded) =
 
 
 
--- RECORDS
 ---- ENCODING ----
 
 
@@ -106,17 +102,3 @@ filePortDecoder requests =
                     Nothing ->
                         Decode.fail "Can't find request"
             )
-
-
-encoder : FilePortRequest -> Encode.Value
-encoder (FilePortRequest id inputId { name, data }) =
-    Encode.object
-        [ ( "id", Encode.int id )
-        , ( "data"
-          , Encode.object
-                [ ( "name", Encode.string name )
-                , ( "inputId", Encode.string inputId )
-                , ( "data", data )
-                ]
-          )
-        ]

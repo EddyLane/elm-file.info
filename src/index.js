@@ -9,7 +9,10 @@ app.ports.readFileContent.subscribe(([id, _inputId, file]) => {
 
     const reader = new FileReader();
 
-    reader.onload = (({target: {result}}) => app.ports.fileContentRead.send({id, result}));
+    reader.onload = (({target: {result}}) => {
+        app.ports.fileContentRead.send({id, result})
+    });
+
     reader.readAsDataURL(file);
 
 });

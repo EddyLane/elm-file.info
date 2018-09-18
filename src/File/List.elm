@@ -33,4 +33,4 @@ viewThumbnail file =
     if File.isImage file then
         img [ src (File.base64Encoded file) ] []
     else
-        text ""
+        text "non-image thumbnail"
