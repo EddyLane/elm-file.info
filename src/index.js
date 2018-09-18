@@ -21,7 +21,19 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
 
     fetch(base64Data)
         .then(res => res.blob())
-        .then(blob => console.log(blob));
+        .then((blob) => {
+
+            const uploadRequest = new XMLHttpRequest();
+            uploadRequest.open('PUT', signedUrl, true);
+
+            uploadRequest.onload = (oEvent) => {
+                // Uploaded.
+            };
+
+            uploadRequest.send(blob);
+
+        });
+
 });
 
 app.ports.browseClick.subscribe((inputId) => {
