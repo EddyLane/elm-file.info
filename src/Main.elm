@@ -1,4 +1,4 @@
-port module Main exposing (..)
+module Main exposing (..)
 
 import Drag
 import File.File as File
@@ -6,18 +6,16 @@ import File.List as FileList
 import File.Upload as Upload
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Http
 import Json.Decode as Decode
+import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
 import Task exposing (Task)
 
 
----- PORTS ----
-
-
-port browseClick : String -> Cmd msg
-
-
-port uploadFile : String -> Cmd msg
+signedUrlProviderUrl : String
+signedUrlProviderUrl =
+    "http://localhost:3003/signed-upload-url"
 
 
 
@@ -56,17 +54,14 @@ type Msg
     | DragOver Drag.Event
     | DragLeave Drag.Event
     | Drop Drag.Event
-
-
-
--- | InsertResult JE.Value (Result Http.Error )
+    | GotSignedUrl (Result Http.Error SignedUrl)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         OpenFileBrowser inputID ->
-            ( model, browseClick inputID )
+            ( model, Upload.browseClick inputID )
 
         OnChangeFiles inputId files ->
             let
@@ -88,7 +83,7 @@ update msg model =
                 | responses = response :: model.responses
                 , readRequests = File.removeRequest response model.readRequests
               }
-            , Cmd.none
+            , Task.attempt GotSignedUrl getSignedUrl
             )
 
         OnFileRead (Err err) ->
@@ -104,18 +99,12 @@ update msg model =
             , Cmd.none
             )
 
-        Drop event ->
+        Drop { dataTransfer } ->
             let
-                e =
-                    Debug.log "e" event
-
-                --                files_ =
-                --                    List.map (\f -> Debug.log "file" f.data) (Debug.log "files" event.dataTransfer.files)
-                files =
-                    event.dataTransfer.files
-
                 readRequests =
-                    File.requests (model.requestId + 1) (Upload.getInputId uploadConfig) files
+                    dataTransfer
+                        |> .files
+                        |> File.requests (model.requestId + 1) (Upload.getInputId uploadConfig)
             in
             ( { model
                 | readRequests = readRequests
@@ -125,23 +114,30 @@ update msg model =
             , File.readCmds readRequests
             )
 
+        GotSignedUrl (Ok { signedUrl }) ->
+            ( model, Cmd.none )
+
+        GotSignedUrl (Err e) ->
+            ( model, Cmd.none )
+
         NoOp ->
             ( model, Cmd.none )
 
 
-type alias SignedUpload =
+type alias SignedUrl =
     { signedUrl : String
     , reference : String
     }
 
 
-
--- uploadFiles : List Drag.Files
-
-
-getSignedUploadUrl : Task e String
-getSignedUploadUrl =
-    Task.succeed "1234-5678-9101-1213"
+getSignedUrl : Task Http.Error SignedUrl
+getSignedUrl =
+    Http.get signedUrlProviderUrl
+        (Pipeline.decode SignedUrl
+            |> Pipeline.required "signedUrl" Decode.string
+            |> Pipeline.required "reference" Decode.string
+        )
+        |> Http.toTask
 
 
 

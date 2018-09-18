@@ -1,8 +1,9 @@
-module File.Upload
+port module File.Upload
     exposing
         ( Config
         , State
         , backendUrl
+        , browseClick
         , browseFiles
         , config
         , drag
@@ -23,6 +24,13 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onWithOptions)
 import Json.Decode as Decode
 import Mouse
+
+
+--- PORTS -----
+
+
+port browseClick : String -> Cmd msg
+
 
 
 ---- STATE ----
