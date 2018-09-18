@@ -1,34 +1,24 @@
-port module File.Upload
+module File.Upload
     exposing
         ( Config
         , State
         , backendUrl
         , browseFiles
         , config
-        , fileChanges
         , init
         , maximumFileSize
-        , openFileBrowser
+        , onChangeFiles
         , update
         , uploadFile
         , view
         )
 
-import Dict exposing (Dict)
 import Drag
 import File.File as File
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onWithOptions)
-import Json.Decode as JD
-import RemoteData exposing (RemoteData(..), WebData)
-
-
----- PORTS ----
-
-
-port browseClick : () -> Cmd msg
-
+import Json.Decode as Decode
 
 
 ---- STATE ----
@@ -57,7 +47,7 @@ type Config msg
 
 type alias ConfigRec msg =
     { onChangeFilesMsg : List Drag.File -> msg
-    , uploadFileMsg : File.FileData -> msg
+    , uploadFileMsg : File.FilePortRequest -> msg
     , softDeleteSelectedMsg : msg
     , browseClickMsg : msg
     , dragOverMsg : Drag.Event -> msg
@@ -125,7 +115,7 @@ maximumFileSize size (Config configRec) =
         { configRec | maximumFileSize = size }
 
 
-uploadFile : (File.FileData -> msg) -> Config msg -> Config msg
+uploadFile : (File.FilePortRequest -> msg) -> Config msg -> Config msg
 uploadFile msg (Config configRec) =
     Config <|
         { configRec | uploadFileMsg = msg }
@@ -152,41 +142,37 @@ update model updateFn =
     )
 
 
-openFileBrowser : State -> ( State, Cmd msg )
-openFileBrowser state =
-    ( state
-    , browseClick ()
-    )
-
-
 
 -- onChangeFiles : List Drag.File
-
-
-fileChanges : List Drag.File -> State -> ( State, Cmd msg )
-fileChanges files state =
-    let
-        requestId =
-            ""
-
-        cmds =
-            files
-                |> List.filterMap decodeData
-
-        -- |> List.map (\( decodedFileData, rawFileData ) -> insert rawFileData decodedFileData model requestId)
-    in
-    ( state, Cmd.none )
-
-
-decodeData : Drag.File -> Maybe ( File.FileData, JD.Value )
-decodeData { data } =
-    data
-        |> JD.decodeValue File.decoder
-        |> Result.toMaybe
-        |> Maybe.map (\x -> ( x, data ))
-
-
-
+{- -}
+-- fileChanges : List Drag.File -> List ( File.FilePortRequest, Decode.Value )
+-- fileChanges files =
+--     List.filterMap decodeData files
+-- decodeData : Drag.File -> Maybe ( File.FilePortRequest, Decode.Value )
+-- decodeData { data } =
+--     data
+--         |> Decode.decodeValue File.decoder
+--         |> Result.toMaybe
+--         |> Maybe.map (\x -> ( x, data ))
+-- upload : Config msg -> File.FilePortRequest -> String -> msg
+-- upload config FilePortRequest requestId =
+--     let
+--         payload =
+--             File.encoder FilePortRequest
+--     in
+--     Cmd.none
+-- requestAttachmentsInsert : String -> JE.Value -> (APIData Types.AttachmentWithUsername -> msg) -> Cmd msg
+-- requestAttachmentsInsert backendUrl payload msg =
+--     let
+--         apiCallCmd =
+--             Push.init "service:all" "request:attachments:insert"
+--                 |> Push.withPayload payload
+--                 |> Push.onOk (okHandler msg <| Decoders.attachmentWithUsername)
+--                 |> Push.onError (errorHandler msg)
+--                 |> Phoenix.push (socketUrl backendUrl)
+--     in
+--     Cmd.batch [ progressCmd msg, apiCallCmd ]
+-- API.requestAttachmentsInsert model.backendUrl payload (InsertResult FilePortRequestV)
 ---- VIEW ----
 
 
@@ -251,8 +237,8 @@ view (State state) (Config config) =
                             , type_ "file"
                             , id "file-upload-input"
                             , onWithOptions "change" onOptions <|
-                                JD.map config.onChangeFilesMsg <|
-                                    JD.at [ "target", "files" ] <|
+                                Decode.map config.onChangeFilesMsg <|
+                                    Decode.at [ "target", "files" ] <|
                                         Drag.fileListDecoder Drag.fileDecoder
                             ]
                             []
