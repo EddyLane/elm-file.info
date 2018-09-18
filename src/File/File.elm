@@ -6,6 +6,7 @@ port module File.File
         , file
         , fileContentRead
         , filePortDecoder
+        , readCmds
         , readFileContent
         , removeRequest
         , request
@@ -45,6 +46,13 @@ type FilePortResponse
 requests : Int -> String -> List Drag.File -> List FilePortRequest
 requests requestId inputId =
     List.indexedMap (\i file -> request (i + requestId) inputId file)
+
+
+readCmds : List FilePortRequest -> Cmd msg
+readCmds requests =
+    requests
+        |> List.map (encoder >> Encode.encode 0 >> readFileContent)
+        |> Cmd.batch
 
 
 removeRequest : FilePortResponse -> List FilePortRequest -> List FilePortRequest
@@ -93,13 +101,14 @@ filePortDecoder requests =
 
 
 encoder : FilePortRequest -> Encode.Value
-encoder (FilePortRequest id inputId { name }) =
+encoder (FilePortRequest id inputId { name, data }) =
     Encode.object
         [ ( "id", Encode.int id )
         , ( "data"
           , Encode.object
                 [ ( "name", Encode.string name )
                 , ( "inputId", Encode.string inputId )
+                , ( "data", data )
                 ]
           )
         ]

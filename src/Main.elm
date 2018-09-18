@@ -5,6 +5,7 @@ import File.File as File
 import File.List as FileList
 import File.Upload as Upload
 import Html exposing (..)
+import Html.Attributes exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Task exposing (Task)
@@ -26,7 +27,7 @@ port uploadFile : String -> Cmd msg
 type alias Model =
     { requestId : Int
     , upload : Upload.State
-    , requests : List File.FilePortRequest
+    , readRequests : List File.FilePortRequest
     , responses : List File.FilePortResponse
     }
 
@@ -35,7 +36,7 @@ init : ( Model, Cmd Msg )
 init =
     ( { upload = Upload.init
       , requestId = 1
-      , requests = []
+      , readRequests = []
       , responses = []
       }
     , Cmd.none
@@ -52,6 +53,9 @@ type Msg
     | OnChangeFiles String (List Drag.File)
     | UploadFile File.FilePortRequest
     | OnFileRead (Result String File.FilePortResponse)
+    | DragOver Drag.Event
+    | DragLeave Drag.Event
+    | Drop Drag.Event
 
 
 
@@ -66,16 +70,14 @@ update msg model =
 
         OnChangeFiles inputId files ->
             let
-                requests =
+                readRequests =
                     File.requests (model.requestId + 1) inputId files
             in
             ( { model
-                | requests = requests
-                , requestId = model.requestId + List.length requests
+                | readRequests = readRequests
+                , requestId = model.requestId + List.length readRequests
               }
-            , requests
-                |> List.map (File.encoder >> Encode.encode 0 >> File.readFileContent)
-                |> Cmd.batch
+            , File.readCmds readRequests
             )
 
         UploadFile file ->
@@ -84,13 +86,45 @@ update msg model =
         OnFileRead (Ok response) ->
             ( { model
                 | responses = response :: model.responses
-                , requests = File.removeRequest response model.requests
+                , readRequests = File.removeRequest response model.readRequests
               }
             , Cmd.none
             )
 
         OnFileRead (Err err) ->
             ( model, Cmd.none )
+
+        DragOver event ->
+            ( { model | upload = Upload.dropActive True model.upload }
+            , Cmd.none
+            )
+
+        DragLeave event ->
+            ( { model | upload = Upload.dropActive False model.upload }
+            , Cmd.none
+            )
+
+        Drop event ->
+            let
+                e =
+                    Debug.log "e" event
+
+                files_ =
+                    List.map (\f -> Debug.log "file" f.data) (Debug.log "files" event.dataTransfer.files)
+
+                files =
+                    event.dataTransfer.files
+
+                readRequests =
+                    File.requests (model.requestId + 1) (Upload.getInputId uploadConfig) files
+            in
+            ( { model
+                | readRequests = readRequests
+                , requestId = model.requestId + List.length readRequests
+                , upload = Upload.dropActive False model.upload
+              }
+            , File.readCmds readRequests
+            )
 
         NoOp ->
             ( model, Cmd.none )
@@ -127,17 +161,16 @@ getSignedUploadUrl =
 uploadConfig : Upload.Config Msg
 uploadConfig =
     Upload.config NoOp
-        |> Upload.backendUrl "http://localhost:4000"
         |> Upload.maximumFileSize 500
         |> Upload.onChangeFiles OnChangeFiles
         |> Upload.browseFiles OpenFileBrowser
-        |> Upload.uploadFile UploadFile
+        |> Upload.drag DragOver DragLeave Drop
         |> Upload.inputId "elm-file-example"
 
 
 view : Model -> Html Msg
 view model =
-    div []
+    div [ style [ ( "width", "700px" ) ] ]
         [ Upload.view model.upload uploadConfig
         , FileList.view model.responses
         ]
@@ -155,7 +188,7 @@ fileContentRead requests =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Sub.map OnFileRead (fileContentRead model.requests) ]
+        [ Sub.map OnFileRead (fileContentRead model.readRequests) ]
 
 
 

@@ -5,12 +5,13 @@ module File.Upload
         , backendUrl
         , browseFiles
         , config
+        , drag
+        , dropActive
         , getInputId
         , init
         , inputId
         , maximumFileSize
         , onChangeFiles
-        , update
         , uploadFile
         , view
         )
@@ -146,15 +147,9 @@ backendUrl backendUrl (Config configRec) =
 ---- UPDATE ----
 
 
-update : { a | upload : State } -> (State -> ( State, Cmd msg )) -> ( { a | upload : State }, Cmd msg )
-update model updateFn =
-    let
-        ( upload, cmd ) =
-            updateFn model.upload
-    in
-    ( { model | upload = upload }
-    , cmd
-    )
+dropActive : Bool -> State -> State
+dropActive isActive (State state) =
+    State { state | dropActive = isActive }
 
 
 
@@ -205,52 +200,55 @@ descriptions =
 
 view : State -> Config msg -> Html msg
 view (State state) (Config config) =
-    let
-        -- hasChecked =
-        --     state.attachments
-        --         |> RemoteData.map (List.map .selected >> List.any (\x -> x == True))
-        --         |> RemoteData.withDefault False
-        onOptions =
-            { stopPropagation = False
-            , preventDefault = False
-            }
-    in
-    div [ class "tile tile-attachments s3s-files" ]
-        [ div
-            [ classList
-                [ ( "drop-zone", True )
-                , ( "drop-active", state.dropActive )
-                ]
-            , Drag.onOver config.dragOverMsg
-            , Drag.onLeave config.dragLeaveMsg
-            , Drag.onDrop config.dropMsg
-            ]
-          <|
-            [ div [ class "tile-hd" ]
-                [ div [ class "tile-name" ]
-                    [ text "Files" ]
-                ]
-            , p [ class "upload-file-container" ]
-                [ i [ class "fa fa-upload" ]
-                    []
-                , text "Drop your files here or "
-                , a
-                    [ attribute "data-action" "choose-files"
-                    , href "javascript:void(0)"
-                    , onClick (config.browseClickMsg config.inputId)
-                    ]
-                    [ text "browse for a file " ]
-                , text "to upload."
-                ]
-            ]
+    div []
+        [ dropZone state config
         , fileInput config
+        ]
+
+
+dropZone : StateRec -> ConfigRec msg -> Html msg
+dropZone state config =
+    div
+        [ style
+            [ ( "width", "100%" )
+            , ( "height", "150px" )
+            , ( "border-bottom"
+              , if state.dropActive then
+                    "2px dashed #ddd"
+                else
+                    "2px dashed transparent"
+              )
+            , ( "background"
+              , if state.dropActive then
+                    "#dff0d8"
+                else
+                    "#f7f7f7"
+              )
+            ]
+        , Drag.onOver config.dragOverMsg
+        , Drag.onLeave config.dragLeaveMsg
+        , Drag.onDrop config.dropMsg
+        ]
+    <|
+        [ div [] [ text "Files" ]
+        , p [ class "upload-file-container" ]
+            [ i [ class "fa fa-upload" ] []
+            , text "Drop your files here or "
+            , a
+                [ href "javascript:void(0)"
+                , onClick (config.browseClickMsg config.inputId)
+                ]
+                [ text "browse for a file" ]
+            , text " to upload."
+            ]
         ]
 
 
 fileInput : ConfigRec msg -> Html msg
 fileInput { inputId, onChangeFilesMsg } =
     input
-        [ attribute "multiple" ""
+        [ style [ ( "display", "none" ) ]
+        , attribute "multiple" ""
         , type_ "file"
         , id inputId
         , onWithOptions

@@ -7,6 +7,9 @@ const app = Main.embed(document.getElementById('root'));
 
 app.ports.readFileContent.subscribe((request) => {
 
+    debugger;
+    console.log(request);
+
     const {id, data: {name, inputId}} = JSON.parse(request);
     const element = document.getElementById(inputId);
 
