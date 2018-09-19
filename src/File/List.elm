@@ -24,15 +24,15 @@ view upload =
         ]
 
 
-viewRow : File.FileLifecycle -> Html msg
+viewRow : File.UploadState file -> Html msg
 viewRow file =
     tr []
         [ th [] [ viewThumbnail file ]
-        , th [] [ file |> File.file |> .name |> text ]
+        , th [] [ file |> File.name |> text ]
         , th [] [ file |> File.uploadProgress |> toString |> text ]
         ]
 
 
-viewThumbnail : File.FileLifecycle -> Html msg
+viewThumbnail : File.UploadState file -> Html msg
 viewThumbnail file =
     img [ src (File.thumbnailSrc file) ] []

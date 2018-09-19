@@ -1,15 +1,15 @@
 port module File.File
     exposing
-        ( FileLifecycle
-        , FileReadPortRequest
+        ( FileReadPortRequest
         , FileReadPortResponse
         , FileSigned
-        , file
+        , UploadState
         , fileContentRead
         , filePortDecoder
         , lifeCycleReading
         , lifeCycleSigning
         , lifeCycleUploading
+        , name
         , readCmds
         , removeReadRequest
         , removeSigningRequest
@@ -58,23 +58,24 @@ type FileSigned
     = FileSigned FileReadPortResponse SignedUrl
 
 
-type FileLifecycle
+type UploadState file
     = ReadingBase64 FileReadPortRequest
     | GettingSignedS3Url FileReadPortResponse
     | UploadingToS3 FileSigned
+    | Uploaded file
 
 
-lifeCycleReading : FileReadPortRequest -> FileLifecycle
+lifeCycleReading : FileReadPortRequest -> UploadState file
 lifeCycleReading =
     ReadingBase64
 
 
-lifeCycleSigning : FileReadPortResponse -> FileLifecycle
+lifeCycleSigning : FileReadPortResponse -> UploadState file
 lifeCycleSigning =
     GettingSignedS3Url
 
 
-lifeCycleUploading : FileSigned -> FileLifecycle
+lifeCycleUploading : FileSigned -> UploadState file
 lifeCycleUploading =
     UploadingToS3
 
@@ -104,7 +105,7 @@ uploadCmds signed =
         |> Cmd.batch
 
 
-uploadProgress : FileLifecycle -> Float
+uploadProgress : UploadState file -> Float
 uploadProgress file =
     case file of
         ReadingBase64 _ ->
@@ -115,6 +116,9 @@ uploadProgress file =
 
         UploadingToS3 _ ->
             40.0
+
+        Uploaded _ ->
+            100.0
 
 
 removeReadRequest : FileReadPortResponse -> List FileReadPortRequest -> List FileReadPortRequest
@@ -137,7 +141,7 @@ signed =
     FileSigned
 
 
-thumbnailSrc : FileLifecycle -> String
+thumbnailSrc : UploadState file -> String
 thumbnailSrc file =
     case ( isImage file, file ) of
         ( True, GettingSignedS3Url response ) ->
@@ -150,7 +154,7 @@ thumbnailSrc file =
             ""
 
 
-isImage : FileLifecycle -> Bool
+isImage : UploadState file -> Bool
 isImage file =
     case file of
         ReadingBase64 (FileReadPortRequest _ _) ->
@@ -162,18 +166,24 @@ isImage file =
         UploadingToS3 (FileSigned (FileReadPortResponse (FileReadPortRequest _ { typeMIME }) _) _) ->
             String.startsWith "image" typeMIME
 
+        Uploaded _ ->
+            False
 
-file : FileLifecycle -> Drag.File
-file file =
+
+name : UploadState file -> String
+name file =
     case file of
         ReadingBase64 request ->
-            fileFromRequest request
+            .name <| fileFromRequest request
 
         GettingSignedS3Url response ->
-            fileFromResponse response
+            .name <| fileFromResponse response
 
         UploadingToS3 signed ->
-            fileFromSigned signed
+            .name <| fileFromSigned signed
+
+        Uploaded _ ->
+            "NOT IMPLEMENTED YET"
 
 
 fileFromSigned : FileSigned -> Drag.File

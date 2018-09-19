@@ -41,23 +41,23 @@ init =
 type Msg
     = NoOp
     | OpenFileBrowser String
-    | OnChangeFiles String (List Drag.File)
-    | OnFileRead (Result String File.FileReadPortResponse)
-    | DragOver Drag.Event
-    | DragLeave Drag.Event
-    | Drop Drag.Event
-    | GotSignedUrl File.FileReadPortResponse (Result Http.Error SignedUrl)
+    | InputFiles String (List Drag.File)
+    | Base64EncodeFile (Result String File.FileReadPortResponse)
+    | DragFilesOver Drag.Event
+    | DragFilesLeave Drag.Event
+    | DropFiles Drag.Event
+    | GetSignedS3Url File.FileReadPortResponse (Result Http.Error SignedUrl)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        DragOver event ->
+        DragFilesOver event ->
             ( Upload.dropActive True model
             , Cmd.none
             )
 
-        DragLeave event ->
+        DragFilesLeave event ->
             ( Upload.dropActive False model
             , Cmd.none
             )
@@ -67,26 +67,28 @@ update msg model =
             , Upload.browseClick inputID
             )
 
-        OnChangeFiles _ files ->
-            Upload.addFileReadRequests files model
+        DropFiles { dataTransfer } ->
+            model
+                |> Upload.dropActive False
+                |> Upload.base64EncodeFile dataTransfer.files
 
-        Drop { dataTransfer } ->
-            Upload.addFileReadRequests dataTransfer.files model
+        InputFiles _ files ->
+            Upload.base64EncodeFile files model
 
-        OnFileRead (Ok file) ->
+        Base64EncodeFile (Ok file) ->
             ( Upload.fileReadSuccess file model
-            , Task.attempt (GotSignedUrl file) getSignedUrl
+            , Task.attempt (GetSignedS3Url file) getSignedUrl
             )
 
-        OnFileRead (Err err) ->
+        Base64EncodeFile (Err err) ->
             ( model
             , Cmd.none
             )
 
-        GotSignedUrl file (Ok signedUrl) ->
-            Upload.getSignedS3UrlSuccess signedUrl file model
+        GetSignedS3Url file (Ok signedUrl) ->
+            Upload.uploadFileToSignedUrl signedUrl file model
 
-        GotSignedUrl _ (Err e) ->
+        GetSignedS3Url _ (Err e) ->
             ( model
             , Cmd.none
             )
@@ -111,9 +113,9 @@ uploadConfig : Upload.Config Msg
 uploadConfig =
     Upload.config NoOp
         |> Upload.maximumFileSize 500
-        |> Upload.onChangeFiles OnChangeFiles
+        |> Upload.onChangeFiles InputFiles
         |> Upload.browseFiles OpenFileBrowser
-        |> Upload.drag DragOver DragLeave Drop
+        |> Upload.drag DragFilesOver DragFilesLeave DropFiles
         |> Upload.inputId "elm-file-example"
 
 
@@ -143,7 +145,7 @@ fileContentRead requests =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Sub.map OnFileRead (fileContentRead <| Upload.getReading model) ]
+        [ Sub.map Base64EncodeFile (fileContentRead <| Upload.getReading model) ]
 
 
 

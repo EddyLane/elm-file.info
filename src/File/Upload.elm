@@ -2,8 +2,8 @@ port module File.Upload
     exposing
         ( Config
         , State
-        , addFileReadRequests
         , backendUrl
+        , base64EncodeFile
         , browseClick
         , browseFiles
         , config
@@ -12,12 +12,12 @@ port module File.Upload
         , fileReadSuccess
         , files
         , getReading
-        , getSignedS3UrlSuccess
         , init
         , inputId
         , maximumFileSize
         , onChangeFiles
         , uploadFile
+        , uploadFileToSignedUrl
         , view
         )
 
@@ -159,12 +159,13 @@ getReading (State { reading }) =
     reading
 
 
-files : State -> List File.FileLifecycle
+files : State -> List (File.UploadState file)
 files (State { reading, signing, uploading }) =
     List.concat
         [ List.map File.lifeCycleReading reading
         , List.map File.lifeCycleSigning signing
         , List.map File.lifeCycleUploading uploading
+        , []
         ]
 
 
@@ -177,8 +178,8 @@ dropActive isActive (State state) =
     State { state | dropActive = isActive }
 
 
-addFileReadRequests : List Drag.File -> State -> ( State, Cmd msg )
-addFileReadRequests files (State state) =
+base64EncodeFile : List Drag.File -> State -> ( State, Cmd msg )
+base64EncodeFile files (State state) =
     let
         reading =
             state.reading ++ File.requests (state.requestId + 1) files
@@ -201,8 +202,8 @@ fileReadSuccess file (State state) =
         }
 
 
-getSignedS3UrlSuccess : SignedUrl -> File.FileReadPortResponse -> State -> ( State, Cmd msg )
-getSignedS3UrlSuccess signedUrl file (State state) =
+uploadFileToSignedUrl : SignedUrl -> File.FileReadPortResponse -> State -> ( State, Cmd msg )
+uploadFileToSignedUrl signedUrl file (State state) =
     let
         signedFile =
             File.signed file signedUrl
