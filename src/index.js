@@ -5,7 +5,7 @@ import registerServiceWorker from './registerServiceWorker';
 const app = Main.embed(document.getElementById('root'));
 
 
-app.ports.readFileContent.subscribe(([id, _inputId, file]) => {
+app.ports.readFileContent.subscribe(([id, file]) => {
 
     const reader = new FileReader();
 

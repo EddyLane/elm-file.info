@@ -36,7 +36,7 @@ import Json.Encode as Encode
 port fileContentRead : (Encode.Value -> msg) -> Sub msg
 
 
-port readFileContent : ( Int, String, Decode.Value ) -> Cmd msg
+port readFileContent : ( Int, Decode.Value ) -> Cmd msg
 
 
 port upload : ( Int, String, String ) -> Cmd msg
@@ -47,7 +47,7 @@ port upload : ( Int, String, String ) -> Cmd msg
 
 
 type FileReadPortRequest
-    = FileReadPortRequest Int String Drag.File
+    = FileReadPortRequest Int Drag.File
 
 
 type FileReadPortResponse
@@ -79,17 +79,17 @@ lifeCycleUploading =
     UploadingToS3
 
 
-requests : Int -> String -> List Drag.File -> List FileReadPortRequest
-requests requestId inputId =
-    List.indexedMap (\i file -> request (i + requestId) inputId file)
+requests : Int -> List Drag.File -> List FileReadPortRequest
+requests requestId =
+    List.indexedMap (\i file -> request (i + requestId) file)
 
 
 readCmds : List FileReadPortRequest -> Cmd msg
 readCmds requests =
     requests
         |> List.map
-            (\(FileReadPortRequest id inputId request) ->
-                readFileContent ( id, inputId, request.data )
+            (\(FileReadPortRequest id request) ->
+                readFileContent ( id, request.data )
             )
         |> Cmd.batch
 
@@ -98,7 +98,7 @@ uploadCmds : List FileSigned -> Cmd msg
 uploadCmds signed =
     signed
         |> List.map
-            (\(FileSigned (FileReadPortResponse (FileReadPortRequest id _ _) base64File) signedUrl) ->
+            (\(FileSigned (FileReadPortResponse (FileReadPortRequest id _) base64File) signedUrl) ->
                 upload ( id, SignedUrl.toString signedUrl, base64File )
             )
         |> Cmd.batch
@@ -118,16 +118,16 @@ uploadProgress file =
 
 
 removeReadRequest : FileReadPortResponse -> List FileReadPortRequest -> List FileReadPortRequest
-removeReadRequest (FileReadPortResponse (FileReadPortRequest requestId _ _) _) =
-    List.filter (\(FileReadPortRequest id _ _) -> id /= requestId)
+removeReadRequest (FileReadPortResponse (FileReadPortRequest requestId _) _) =
+    List.filter (\(FileReadPortRequest id _) -> id /= requestId)
 
 
 removeSigningRequest : FileSigned -> List FileReadPortResponse -> List FileReadPortResponse
-removeSigningRequest (FileSigned (FileReadPortResponse (FileReadPortRequest requestId _ _) _) _) =
-    List.filter (\(FileReadPortResponse (FileReadPortRequest id _ _) _) -> id /= requestId)
+removeSigningRequest (FileSigned (FileReadPortResponse (FileReadPortRequest requestId _) _) _) =
+    List.filter (\(FileReadPortResponse (FileReadPortRequest id _) _) -> id /= requestId)
 
 
-request : Int -> String -> Drag.File -> FileReadPortRequest
+request : Int -> Drag.File -> FileReadPortRequest
 request =
     FileReadPortRequest
 
@@ -153,13 +153,13 @@ thumbnailSrc file =
 isImage : FileLifecycle -> Bool
 isImage file =
     case file of
-        ReadingBase64 (FileReadPortRequest _ _ _) ->
+        ReadingBase64 (FileReadPortRequest _ _) ->
             False
 
-        GettingSignedS3Url (FileReadPortResponse (FileReadPortRequest _ _ { typeMIME }) _) ->
+        GettingSignedS3Url (FileReadPortResponse (FileReadPortRequest _ { typeMIME }) _) ->
             String.startsWith "image" typeMIME
 
-        UploadingToS3 (FileSigned (FileReadPortResponse (FileReadPortRequest _ _ { typeMIME }) _) _) ->
+        UploadingToS3 (FileSigned (FileReadPortResponse (FileReadPortRequest _ { typeMIME }) _) _) ->
             String.startsWith "image" typeMIME
 
 
@@ -187,7 +187,7 @@ fileFromResponse (FileReadPortResponse request _) =
 
 
 fileFromRequest : FileReadPortRequest -> Drag.File
-fileFromRequest (FileReadPortRequest _ _ file) =
+fileFromRequest (FileReadPortRequest _ file) =
     file
 
 
@@ -208,7 +208,7 @@ filePortDecoder requests =
                 let
                     maybeRequest =
                         requests
-                            |> List.filter (\(FileReadPortRequest id _ _) -> id == requestId)
+                            |> List.filter (\(FileReadPortRequest id _) -> id == requestId)
                             |> List.head
                 in
                 case maybeRequest of

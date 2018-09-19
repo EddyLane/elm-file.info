@@ -177,11 +177,11 @@ dropActive isActive (State state) =
     State { state | dropActive = isActive }
 
 
-addFileReadRequests : Config msg -> List Drag.File -> State -> ( State, Cmd msg )
-addFileReadRequests (Config { inputId }) files (State state) =
+addFileReadRequests : List Drag.File -> State -> ( State, Cmd msg )
+addFileReadRequests files (State state) =
     let
         reading =
-            state.reading ++ File.requests (state.requestId + 1) inputId files
+            state.reading ++ File.requests (state.requestId + 1) files
     in
     ( State
         { state

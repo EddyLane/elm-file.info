@@ -68,10 +68,10 @@ update msg model =
             )
 
         OnChangeFiles _ files ->
-            Upload.addFileReadRequests uploadConfig files model
+            Upload.addFileReadRequests files model
 
         Drop { dataTransfer } ->
-            Upload.addFileReadRequests uploadConfig dataTransfer.files model
+            Upload.addFileReadRequests dataTransfer.files model
 
         OnFileRead (Ok file) ->
             ( Upload.fileReadSuccess file model
@@ -127,12 +127,7 @@ view model =
         ]
         [ Upload.view model uploadConfig
         , hr [] []
-
-        --        , FileList.view
-        --            { reading = model.reading
-        --            , signing = model.signing
-        --            , uploading = modeling
-        --            }
+        , FileList.view model
         ]
 
 
