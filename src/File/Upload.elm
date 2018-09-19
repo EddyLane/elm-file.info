@@ -2,26 +2,28 @@ port module File.Upload
     exposing
         ( Config
         , State
+        , addFileReadRequests
         , backendUrl
         , browseClick
         , browseFiles
         , config
         , drag
         , dropActive
-        , getInputId
-        , getRequestId
+        , fileReadSuccess
+        , files
+        , getReading
+        , getSignedS3UrlSuccess
         , init
         , inputId
         , maximumFileSize
         , onChangeFiles
-        , updateRequestId
         , uploadFile
         , view
         )
 
 import Drag
 import File.File as File
-import File.SignedUrl as SignedUrl
+import File.SignedUrl as SignedUrl exposing (SignedUrl)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onWithOptions)
@@ -48,6 +50,9 @@ type alias StateRec =
     { dropActive : Bool
     , selectAllToggled : Bool
     , requestId : Int
+    , reading : List File.FileReadPortRequest
+    , signing : List File.FileReadPortResponse
+    , uploading : List File.FileSigned
     }
 
 
@@ -75,6 +80,9 @@ init =
         { dropActive = False
         , selectAllToggled = False
         , requestId = 0
+        , reading = []
+        , signing = []
+        , uploading = []
         }
 
 
@@ -104,16 +112,6 @@ inputId : String -> Config msg -> Config msg
 inputId inputId (Config configRec) =
     Config <|
         { configRec | inputId = inputId }
-
-
-getInputId : Config msg -> String
-getInputId (Config { inputId }) =
-    inputId
-
-
-getRequestId : State -> Int
-getRequestId (State { requestId }) =
-    requestId
 
 
 softDelete : msg -> Config msg -> Config msg
@@ -156,6 +154,20 @@ backendUrl backendUrl (Config configRec) =
         { configRec | backendUrl = backendUrl }
 
 
+getReading : State -> List File.FileReadPortRequest
+getReading (State { reading }) =
+    reading
+
+
+files : State -> List File.FileLifecycle
+files (State { reading, signing, uploading }) =
+    List.concat
+        [ List.map File.lifeCycleReading reading
+        , List.map File.lifeCycleSigning signing
+        , List.map File.lifeCycleUploading uploading
+        ]
+
+
 
 ---- UPDATE ----
 
@@ -165,55 +177,47 @@ dropActive isActive (State state) =
     State { state | dropActive = isActive }
 
 
-updateRequestId : Int -> State -> State
-updateRequestId addedRequestAmount (State state) =
-    State { state | requestId = state.requestId + addedRequestAmount }
+addFileReadRequests : Config msg -> List Drag.File -> State -> ( State, Cmd msg )
+addFileReadRequests (Config { inputId }) files (State state) =
+    let
+        reading =
+            state.reading ++ File.requests (state.requestId + 1) inputId files
+    in
+    ( State
+        { state
+            | reading = reading
+            , requestId = state.requestId + List.length reading
+        }
+    , File.readCmds reading
+    )
+
+
+fileReadSuccess : File.FileReadPortResponse -> State -> State
+fileReadSuccess file (State state) =
+    State <|
+        { state
+            | reading = File.removeReadRequest file state.reading
+            , signing = file :: state.signing
+        }
+
+
+getSignedS3UrlSuccess : SignedUrl -> File.FileReadPortResponse -> State -> ( State, Cmd msg )
+getSignedS3UrlSuccess signedUrl file (State state) =
+    let
+        signedFile =
+            File.signed file signedUrl
+    in
+    ( State <|
+        { state
+            | signing = File.removeSigningRequest signedFile state.signing
+            , uploading = signedFile :: state.uploading
+        }
+    , File.uploadCmds [ signedFile ]
+    )
 
 
 
--- onChangeFiles : List Drag.File
-{- -}
--- fileChanges : List Drag.File -> List ( File.FileReadPortRequest, Decode.Value )
--- fileChanges files =
---     List.filterMap decodeData files
--- decodeData : Drag.File -> Maybe ( File.FileReadPortRequest, Decode.Value )
--- decodeData { data } =
---     data
---         |> Decode.decodeValue File.decoder
---         |> Result.toMaybe
---         |> Maybe.map (\x -> ( x, data ))
--- upload : Config msg -> File.FileReadPortRequest -> String -> msg
--- upload config FileReadPortRequest requestId =
---     let
---         payload =
---             File.encoder FileReadPortRequest
---     in
---     Cmd.none
--- requestAttachmentsInsert : String -> JE.Value -> (APIData Types.AttachmentWithUsername -> msg) -> Cmd msg
--- requestAttachmentsInsert backendUrl payload msg =
---     let
---         apiCallCmd =
---             Push.init "service:all" "request:attachments:insert"
---                 |> Push.withPayload payload
---                 |> Push.onOk (okHandler msg <| Decoders.attachmentWithUsername)
---                 |> Push.onError (errorHandler msg)
---                 |> Phoenix.push (socketUrl backendUrl)
---     in
---     Cmd.batch [ progressCmd msg, apiCallCmd ]
--- API.requestAttachmentsInsert model.backendUrl payload (InsertResult FileReadPortRequestV)
 ---- VIEW ----
-
-
-descriptions : List String
-descriptions =
-    [ "Drawings"
-    , "Technical Data"
-    , "Photos"
-    , "Legal"
-    , "Contracts"
-    , "Financial"
-    , "Insurance"
-    ]
 
 
 view : State -> Config msg -> Html msg

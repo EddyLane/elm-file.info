@@ -1,19 +1,13 @@
 module File.List exposing (view)
 
 import File.File as File
+import File.Upload as Upload
 import Html exposing (..)
 import Html.Attributes exposing (..)
 
 
-type alias Context =
-    { reading : List File.FileReadPortRequest
-    , signing : List File.FileReadPortResponse
-    , uploading : List File.FileSigned
-    }
-
-
-view : Context -> Html msg
-view context =
+view : Upload.State -> Html msg
+view upload =
     table []
         [ thead []
             [ tr []
@@ -23,19 +17,10 @@ view context =
                 ]
             ]
         , tbody []
-            (context
-                |> toLifeCycle
+            (upload
+                |> Upload.files
                 |> List.map viewRow
             )
-        ]
-
-
-toLifeCycle : Context -> List File.FileLifecycle
-toLifeCycle { reading, signing, uploading } =
-    List.concat
-        [ List.map File.lifeCycleReading reading
-        , List.map File.lifeCycleSigning signing
-        , List.map File.lifeCycleUploading uploading
         ]
 
 

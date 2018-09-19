@@ -24,20 +24,12 @@ signedUrlProviderUrl =
 
 
 type alias Model =
-    { upload : Upload.State
-    , reading : List File.FileReadPortRequest
-    , signing : List File.FileReadPortResponse
-    , uploading : List File.FileSigned
-    }
+    Upload.State
 
 
 init : ( Model, Cmd Msg )
 init =
-    ( { upload = Upload.init
-      , reading = []
-      , signing = []
-      , uploading = []
-      }
+    ( Upload.init
     , Cmd.none
     )
 
@@ -61,12 +53,12 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         DragOver event ->
-            ( { model | upload = Upload.dropActive True model.upload }
+            ( Upload.dropActive True model
             , Cmd.none
             )
 
         DragLeave event ->
-            ( { model | upload = Upload.dropActive False model.upload }
+            ( Upload.dropActive False model
             , Cmd.none
             )
 
@@ -75,43 +67,15 @@ update msg model =
             , Upload.browseClick inputID
             )
 
-        OnChangeFiles inputId files ->
-            let
-                reading =
-                    File.requests (Upload.getRequestId model.upload + 1) inputId files
-            in
-            ( { model
-                | reading = reading
-                , upload = Upload.updateRequestId (List.length reading) model.upload
-              }
-            , File.readCmds reading
-            )
+        OnChangeFiles _ files ->
+            Upload.addFileReadRequests uploadConfig files model
 
         Drop { dataTransfer } ->
-            let
-                reading =
-                    dataTransfer
-                        |> .files
-                        |> File.requests (Upload.getRequestId model.upload + 1) (Upload.getInputId uploadConfig)
+            Upload.addFileReadRequests uploadConfig dataTransfer.files model
 
-                upload =
-                    model.upload
-                        |> Upload.updateRequestId (List.length reading)
-                        |> Upload.dropActive False
-            in
-            ( { model
-                | reading = reading
-                , upload = upload
-              }
-            , File.readCmds reading
-            )
-
-        OnFileRead (Ok response) ->
-            ( { model
-                | signing = response :: model.signing
-                , reading = File.removeReadRequest response model.reading
-              }
-            , Task.attempt (GotSignedUrl response) getSignedUrl
+        OnFileRead (Ok file) ->
+            ( Upload.fileReadSuccess file model
+            , Task.attempt (GotSignedUrl file) getSignedUrl
             )
 
         OnFileRead (Err err) ->
@@ -119,17 +83,8 @@ update msg model =
             , Cmd.none
             )
 
-        GotSignedUrl response (Ok signedUrl) ->
-            let
-                signed =
-                    File.signed response signedUrl
-            in
-            ( { model
-                | signing = File.removeSigningRequest signed model.signing
-                , uploading = signed :: model.uploading
-              }
-            , File.uploadCmds [ signed ]
-            )
+        GotSignedUrl file (Ok signedUrl) ->
+            Upload.getSignedS3UrlSuccess signedUrl file model
 
         GotSignedUrl _ (Err e) ->
             ( model
@@ -170,13 +125,14 @@ view model =
             , ( "border", "1px solid #000" )
             ]
         ]
-        [ Upload.view model.upload uploadConfig
+        [ Upload.view model uploadConfig
         , hr [] []
-        , FileList.view
-            { reading = model.reading
-            , signing = model.signing
-            , uploading = model.uploading
-            }
+
+        --        , FileList.view
+        --            { reading = model.reading
+        --            , signing = model.signing
+        --            , uploading = modeling
+        --            }
         ]
 
 
@@ -192,7 +148,7 @@ fileContentRead requests =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Sub.map OnFileRead (fileContentRead model.reading) ]
+        [ Sub.map OnFileRead (fileContentRead <| Upload.getReading model) ]
 
 
 

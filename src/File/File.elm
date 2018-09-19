@@ -111,10 +111,10 @@ uploadProgress file =
             0.0
 
         GettingSignedS3Url _ ->
-            25.0
+            10.0
 
         UploadingToS3 _ ->
-            75.0
+            40.0
 
 
 removeReadRequest : FileReadPortResponse -> List FileReadPortRequest -> List FileReadPortRequest
