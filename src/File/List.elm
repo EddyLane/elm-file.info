@@ -5,8 +5,15 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 
 
-view : List File.FileReadPortResponse -> Html msg
-view files =
+type alias Context =
+    { reading : List File.FileReadPortRequest
+    , signing : List File.FileReadPortResponse
+    , uploading : List File.FileSigned
+    }
+
+
+view : Context -> Html msg
+view context =
     table []
         [ thead []
             [ tr []
@@ -14,23 +21,33 @@ view files =
                 , th [] [ text "Filename" ]
                 ]
             ]
-        , tbody [] (List.map viewRow files)
+        , tbody []
+            (context
+                |> toLifeCycle
+                |> List.map viewRow
+            )
         ]
 
 
-viewRow : File.FileReadPortResponse -> Html msg
-viewRow response =
+toLifeCycle : Context -> List File.FileLifecycle
+toLifeCycle { reading, signing, uploading } =
+    List.concat
+        [ List.map File.lifeCycleReading reading
+        , List.map File.lifeCycleSigning signing
+        , List.map File.lifeCycleUploading uploading
+        ]
+
+
+viewRow : File.FileLifecycle -> Html msg
+viewRow file =
     tr []
-        [ viewThumbnail response
-        , File.file response
+        [ viewThumbnail file
+        , File.file file
             |> .name
             |> text
         ]
 
 
-viewThumbnail : File.FileReadPortResponse -> Html msg
+viewThumbnail : File.FileLifecycle -> Html msg
 viewThumbnail file =
-    if File.isImage file then
-        img [ src (File.base64Encoded file) ] []
-    else
-        text "non-image thumbnail"
+    img [ src (File.thumbnailSrc file) ] []

@@ -162,7 +162,11 @@ view model =
         ]
         [ Upload.view model.upload uploadConfig
         , hr [] []
-        , FileList.view model.signing
+        , FileList.view
+            { reading = model.reading
+            , signing = model.signing
+            , uploading = model.uploading
+            }
         ]
 
 
