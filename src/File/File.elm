@@ -18,6 +18,7 @@ port module File.File
         , signed
         , thumbnailSrc
         , uploadCmds
+        , uploadProgress
         )
 
 import Date exposing (Date)
@@ -101,6 +102,19 @@ uploadCmds signed =
                 upload ( id, SignedUrl.toString signedUrl, base64File )
             )
         |> Cmd.batch
+
+
+uploadProgress : FileLifecycle -> Float
+uploadProgress file =
+    case file of
+        ReadingBase64 _ ->
+            0.0
+
+        GettingSignedS3Url _ ->
+            25.0
+
+        UploadingToS3 _ ->
+            75.0
 
 
 removeReadRequest : FileReadPortResponse -> List FileReadPortRequest -> List FileReadPortRequest

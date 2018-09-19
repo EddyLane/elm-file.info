@@ -24,8 +24,7 @@ signedUrlProviderUrl =
 
 
 type alias Model =
-    { requestId : Int
-    , upload : Upload.State
+    { upload : Upload.State
     , reading : List File.FileReadPortRequest
     , signing : List File.FileReadPortResponse
     , uploading : List File.FileSigned
@@ -35,7 +34,6 @@ type alias Model =
 init : ( Model, Cmd Msg )
 init =
     ( { upload = Upload.init
-      , requestId = 1
       , reading = []
       , signing = []
       , uploading = []
@@ -73,16 +71,18 @@ update msg model =
             )
 
         OpenFileBrowser inputID ->
-            ( model, Upload.browseClick inputID )
+            ( model
+            , Upload.browseClick inputID
+            )
 
         OnChangeFiles inputId files ->
             let
                 reading =
-                    File.requests (model.requestId + 1) inputId files
+                    File.requests (Upload.getRequestId model.upload + 1) inputId files
             in
             ( { model
                 | reading = reading
-                , requestId = model.requestId + List.length reading
+                , upload = Upload.updateRequestId (List.length reading) model.upload
               }
             , File.readCmds reading
             )
@@ -92,12 +92,16 @@ update msg model =
                 reading =
                     dataTransfer
                         |> .files
-                        |> File.requests (model.requestId + 1) (Upload.getInputId uploadConfig)
+                        |> File.requests (Upload.getRequestId model.upload + 1) (Upload.getInputId uploadConfig)
+
+                upload =
+                    model.upload
+                        |> Upload.updateRequestId (List.length reading)
+                        |> Upload.dropActive False
             in
             ( { model
                 | reading = reading
-                , requestId = model.requestId + List.length reading
-                , upload = Upload.dropActive False model.upload
+                , upload = upload
               }
             , File.readCmds reading
             )
@@ -111,7 +115,9 @@ update msg model =
             )
 
         OnFileRead (Err err) ->
-            ( model, Cmd.none )
+            ( model
+            , Cmd.none
+            )
 
         GotSignedUrl response (Ok signedUrl) ->
             let
@@ -126,10 +132,14 @@ update msg model =
             )
 
         GotSignedUrl _ (Err e) ->
-            ( model, Cmd.none )
+            ( model
+            , Cmd.none
+            )
 
         NoOp ->
-            ( model, Cmd.none )
+            ( model
+            , Cmd.none
+            )
 
 
 getSignedUrl : Task Http.Error SignedUrl

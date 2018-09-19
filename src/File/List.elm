@@ -19,6 +19,7 @@ view context =
             [ tr []
                 [ th [] []
                 , th [] [ text "Filename" ]
+                , th [] [ text "Progress" ]
                 ]
             ]
         , tbody []
@@ -41,10 +42,9 @@ toLifeCycle { reading, signing, uploading } =
 viewRow : File.FileLifecycle -> Html msg
 viewRow file =
     tr []
-        [ viewThumbnail file
-        , File.file file
-            |> .name
-            |> text
+        [ th [] [ viewThumbnail file ]
+        , th [] [ file |> File.file |> .name |> text ]
+        , th [] [ file |> File.uploadProgress |> toString |> text ]
         ]
 
 

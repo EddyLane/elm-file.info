@@ -9,10 +9,12 @@ port module File.Upload
         , drag
         , dropActive
         , getInputId
+        , getRequestId
         , init
         , inputId
         , maximumFileSize
         , onChangeFiles
+        , updateRequestId
         , uploadFile
         , view
         )
@@ -45,6 +47,7 @@ type State
 type alias StateRec =
     { dropActive : Bool
     , selectAllToggled : Bool
+    , requestId : Int
     }
 
 
@@ -71,6 +74,7 @@ init =
     State <|
         { dropActive = False
         , selectAllToggled = False
+        , requestId = 0
         }
 
 
@@ -105,6 +109,11 @@ inputId inputId (Config configRec) =
 getInputId : Config msg -> String
 getInputId (Config { inputId }) =
     inputId
+
+
+getRequestId : State -> Int
+getRequestId (State { requestId }) =
+    requestId
 
 
 softDelete : msg -> Config msg -> Config msg
@@ -154,6 +163,11 @@ backendUrl backendUrl (Config configRec) =
 dropActive : Bool -> State -> State
 dropActive isActive (State state) =
     State { state | dropActive = isActive }
+
+
+updateRequestId : Int -> State -> State
+updateRequestId addedRequestAmount (State state) =
+    State { state | requestId = state.requestId + addedRequestAmount }
 
 
 
