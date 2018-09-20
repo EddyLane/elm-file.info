@@ -60,6 +60,10 @@ app.get('/signed-upload-url', (req, res) => {
 
 });
 
+app.get('/get-attachments', (req, res) => {
+    res.json(Object.values(files));
+});
+
 app.get('/download', (req, res) => {
 
 
