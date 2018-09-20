@@ -24,7 +24,7 @@ signedUrlProviderUrl =
 
 
 type alias Model =
-    Upload.State
+    Upload.State Attachment
 
 
 init : ( Model, Cmd Msg )
@@ -32,6 +32,30 @@ init =
     ( Upload.init
     , Cmd.none
     )
+
+
+
+{--
+
+A representation of your business logic data type "File" as specified by what you receive from the backend
+--}
+
+
+type alias AttachmentResponse =
+    { attachment : Attachment
+    , signedUrl : SignedUrl
+    }
+
+
+type alias Attachment =
+    { reference : String
+    }
+
+
+attachmentDecoder : Decode.Decoder Attachment
+attachmentDecoder =
+    Pipeline.decode Attachment
+        |> Pipeline.required "reference" Decode.string
 
 
 
@@ -46,18 +70,18 @@ type Msg
     | DragFilesOver Drag.Event
     | DragFilesLeave Drag.Event
     | DropFiles Drag.Event
-    | GetSignedS3Url File.FileReadPortResponse (Result Http.Error SignedUrl)
+    | GetSignedS3Url File.FileReadPortResponse (Result Http.Error AttachmentResponse)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        DragFilesOver event ->
+        DragFilesOver _ ->
             ( Upload.dropActive True model
             , Cmd.none
             )
 
-        DragFilesLeave event ->
+        DragFilesLeave _ ->
             ( Upload.dropActive False model
             , Cmd.none
             )
@@ -70,10 +94,10 @@ update msg model =
         DropFiles { dataTransfer } ->
             model
                 |> Upload.dropActive False
-                |> Upload.base64EncodeFile dataTransfer.files
+                |> Upload.base64EncodeFiles dataTransfer.files
 
         InputFiles _ files ->
-            Upload.base64EncodeFile files model
+            Upload.base64EncodeFiles files model
 
         Base64EncodeFile (Ok file) ->
             ( Upload.fileReadSuccess file model
@@ -85,8 +109,8 @@ update msg model =
             , Cmd.none
             )
 
-        GetSignedS3Url file (Ok signedUrl) ->
-            Upload.uploadFileToSignedUrl signedUrl file model
+        GetSignedS3Url file (Ok { attachment, signedUrl }) ->
+            Upload.uploadFileToSignedUrl signedUrl attachment file model
 
         GetSignedS3Url _ (Err e) ->
             ( model
@@ -99,9 +123,13 @@ update msg model =
             )
 
 
-getSignedUrl : Task Http.Error SignedUrl
+getSignedUrl : Task Http.Error AttachmentResponse
 getSignedUrl =
-    Http.get signedUrlProviderUrl SignedUrl.decoder
+    Http.get signedUrlProviderUrl
+        (Pipeline.decode AttachmentResponse
+            |> Pipeline.required "attachment" attachmentDecoder
+            |> Pipeline.required "signedUrl" SignedUrl.decoder
+        )
         |> Http.toTask
 
 
@@ -137,15 +165,19 @@ view model =
 ---- SUBSCRIPTIONS ----
 
 
-fileContentRead : List File.FileReadPortRequest -> Sub (Result String File.FileReadPortResponse)
-fileContentRead requests =
-    File.fileContentRead (Decode.decodeValue (File.filePortDecoder requests))
+base64EncodeFileSub : List File.FileReadPortRequest -> Sub (Result String File.FileReadPortResponse)
+base64EncodeFileSub requests =
+    File.fileContentRead (Decode.decodeValue <| File.filePortDecoder requests)
+
+
+
+--uploadFileSub :
 
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Sub.map Base64EncodeFile (fileContentRead <| Upload.getReading model) ]
+        [ Sub.map Base64EncodeFile (base64EncodeFileSub <| Upload.getReading model) ]
 
 
 

@@ -8,6 +8,7 @@ port module File.File
         , filePortDecoder
         , lifeCycleReading
         , lifeCycleSigning
+        , lifeCycleUploaded
         , lifeCycleUploading
         , name
         , readCmds
@@ -22,7 +23,6 @@ port module File.File
         )
 
 import Date exposing (Date)
-import Date.Extra
 import Drag
 import File.SignedUrl as SignedUrl exposing (SignedUrl)
 import Json.Decode as Decode
@@ -42,6 +42,9 @@ port readFileContent : ( Int, Decode.Value ) -> Cmd msg
 port upload : ( Int, String, String ) -> Cmd msg
 
 
+port uploaded : ( Int, Bool ) -> Cmd msg
+
+
 
 ---- DATA ----
 
@@ -54,14 +57,14 @@ type FileReadPortResponse
     = FileReadPortResponse FileReadPortRequest String
 
 
-type FileSigned
-    = FileSigned FileReadPortResponse SignedUrl
+type FileSigned file
+    = FileSigned FileReadPortResponse SignedUrl file
 
 
 type UploadState file
     = ReadingBase64 FileReadPortRequest
     | GettingSignedS3Url FileReadPortResponse
-    | UploadingToS3 FileSigned
+    | UploadingToS3 (FileSigned file)
     | Uploaded file
 
 
@@ -75,9 +78,14 @@ lifeCycleSigning =
     GettingSignedS3Url
 
 
-lifeCycleUploading : FileSigned -> UploadState file
+lifeCycleUploading : FileSigned file -> UploadState file
 lifeCycleUploading =
     UploadingToS3
+
+
+lifeCycleUploaded : file -> UploadState file
+lifeCycleUploaded =
+    Uploaded
 
 
 requests : Int -> List Drag.File -> List FileReadPortRequest
@@ -95,11 +103,11 @@ readCmds requests =
         |> Cmd.batch
 
 
-uploadCmds : List FileSigned -> Cmd msg
+uploadCmds : List (FileSigned file) -> Cmd msg
 uploadCmds signed =
     signed
         |> List.map
-            (\(FileSigned (FileReadPortResponse (FileReadPortRequest id _) base64File) signedUrl) ->
+            (\(FileSigned (FileReadPortResponse (FileReadPortRequest id _) base64File) signedUrl _) ->
                 upload ( id, SignedUrl.toString signedUrl, base64File )
             )
         |> Cmd.batch
@@ -126,8 +134,8 @@ removeReadRequest (FileReadPortResponse (FileReadPortRequest requestId _) _) =
     List.filter (\(FileReadPortRequest id _) -> id /= requestId)
 
 
-removeSigningRequest : FileSigned -> List FileReadPortResponse -> List FileReadPortResponse
-removeSigningRequest (FileSigned (FileReadPortResponse (FileReadPortRequest requestId _) _) _) =
+removeSigningRequest : FileSigned file -> List FileReadPortResponse -> List FileReadPortResponse
+removeSigningRequest (FileSigned (FileReadPortResponse (FileReadPortRequest requestId _) _) _ _) =
     List.filter (\(FileReadPortResponse (FileReadPortRequest id _) _) -> id /= requestId)
 
 
@@ -136,7 +144,7 @@ request =
     FileReadPortRequest
 
 
-signed : FileReadPortResponse -> SignedUrl -> FileSigned
+signed : FileReadPortResponse -> SignedUrl -> file -> FileSigned file
 signed =
     FileSigned
 
@@ -147,7 +155,7 @@ thumbnailSrc file =
         ( True, GettingSignedS3Url response ) ->
             base64Encoded response
 
-        ( True, UploadingToS3 (FileSigned response _) ) ->
+        ( True, UploadingToS3 (FileSigned response _ _) ) ->
             base64Encoded response
 
         _ ->
@@ -163,7 +171,7 @@ isImage file =
         GettingSignedS3Url (FileReadPortResponse (FileReadPortRequest _ { typeMIME }) _) ->
             String.startsWith "image" typeMIME
 
-        UploadingToS3 (FileSigned (FileReadPortResponse (FileReadPortRequest _ { typeMIME }) _) _) ->
+        UploadingToS3 (FileSigned (FileReadPortResponse (FileReadPortRequest _ { typeMIME }) _) _ _) ->
             String.startsWith "image" typeMIME
 
         Uploaded _ ->
@@ -186,8 +194,8 @@ name file =
             "NOT IMPLEMENTED YET"
 
 
-fileFromSigned : FileSigned -> Drag.File
-fileFromSigned (FileSigned response _) =
+fileFromSigned : FileSigned file -> Drag.File
+fileFromSigned (FileSigned response _ _) =
     fileFromResponse response
 
 

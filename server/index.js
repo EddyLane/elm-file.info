@@ -19,7 +19,16 @@ if (!config.accessKeyId || !config.secretAccessKey) {
     return;
 }
 
-AWS.config.update({accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey});
+
+let fileId = 1;
+let files = {};
+
+AWS.config.update({
+    accessKeyId: config.accessKeyId,
+    secretAccessKey: config.secretAccessKey
+});
+
+const S3 = new AWS.S3();
 
 app.get('/signed-upload-url', (req, res) => {
 
@@ -33,13 +42,26 @@ app.get('/signed-upload-url', (req, res) => {
         ContentType: 'image/png'
     };
 
-    const S3 = new AWS.S3();
+    const attachment = {
+        reference
+    };
 
-    const signedUrl = S3.getSignedUrl('putObject', s3Params);
+    files[fileId] = attachment;
+    fileId++;
 
-    console.log(`Signed url generated ${signedUrl} (${reference})`);
+    res.json({
+        signedUrl: {
+            signedUrl: S3.getSignedUrl('putObject', s3Params),
+            reference
+        },
+        attachment
+    });
 
-    res.json({signedUrl, reference});
+
+});
+
+app.get('/download', (req, res) => {
+
 
 
 });

@@ -6,7 +6,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 
 
-view : Upload.State -> Html msg
+view : Upload.State file -> Html msg
 view upload =
     table []
         [ thead []

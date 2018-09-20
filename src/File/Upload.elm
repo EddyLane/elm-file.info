@@ -2,8 +2,7 @@ port module File.Upload
     exposing
         ( Config
         , State
-        , backendUrl
-        , base64EncodeFile
+        , base64EncodeFiles
         , browseClick
         , browseFiles
         , config
@@ -42,17 +41,17 @@ port browseClick : String -> Cmd msg
 ---- STATE ----
 
 
-type State
-    = State StateRec
+type State file
+    = State (StateRec file)
 
 
-type alias StateRec =
+type alias StateRec file =
     { dropActive : Bool
     , selectAllToggled : Bool
     , requestId : Int
     , reading : List File.FileReadPortRequest
     , signing : List File.FileReadPortResponse
-    , uploading : List File.FileSigned
+    , uploading : List (File.FileSigned file)
     }
 
 
@@ -69,12 +68,11 @@ type alias ConfigRec msg =
     , dragLeaveMsg : Drag.Event -> msg
     , dropMsg : Drag.Event -> msg
     , maximumFileSize : Int
-    , backendUrl : String
     , inputId : String
     }
 
 
-init : State
+init : State file
 init =
     State <|
         { dropActive = False
@@ -97,7 +95,6 @@ config noOpMsg =
         , dropMsg = always noOpMsg
         , uploadFileMsg = always noOpMsg
         , maximumFileSize = 5000
-        , backendUrl = ""
         , inputId = "elm-file-upload-input"
         }
 
@@ -148,18 +145,12 @@ uploadFile msg (Config configRec) =
         { configRec | uploadFileMsg = msg }
 
 
-backendUrl : String -> Config msg -> Config msg
-backendUrl backendUrl (Config configRec) =
-    Config <|
-        { configRec | backendUrl = backendUrl }
-
-
-getReading : State -> List File.FileReadPortRequest
+getReading : State file -> List File.FileReadPortRequest
 getReading (State { reading }) =
     reading
 
 
-files : State -> List (File.UploadState file)
+files : State file -> List (File.UploadState file)
 files (State { reading, signing, uploading }) =
     List.concat
         [ List.map File.lifeCycleReading reading
@@ -173,13 +164,13 @@ files (State { reading, signing, uploading }) =
 ---- UPDATE ----
 
 
-dropActive : Bool -> State -> State
+dropActive : Bool -> State file -> State file
 dropActive isActive (State state) =
     State { state | dropActive = isActive }
 
 
-base64EncodeFile : List Drag.File -> State -> ( State, Cmd msg )
-base64EncodeFile files (State state) =
+base64EncodeFiles : List Drag.File -> State file -> ( State file, Cmd msg )
+base64EncodeFiles files (State state) =
     let
         reading =
             state.reading ++ File.requests (state.requestId + 1) files
@@ -193,7 +184,7 @@ base64EncodeFile files (State state) =
     )
 
 
-fileReadSuccess : File.FileReadPortResponse -> State -> State
+fileReadSuccess : File.FileReadPortResponse -> State file -> State file
 fileReadSuccess file (State state) =
     State <|
         { state
@@ -202,11 +193,11 @@ fileReadSuccess file (State state) =
         }
 
 
-uploadFileToSignedUrl : SignedUrl -> File.FileReadPortResponse -> State -> ( State, Cmd msg )
-uploadFileToSignedUrl signedUrl file (State state) =
+uploadFileToSignedUrl : SignedUrl -> file -> File.FileReadPortResponse -> State file -> ( State file, Cmd msg )
+uploadFileToSignedUrl signedUrl backendFile file (State state) =
     let
         signedFile =
-            File.signed file signedUrl
+            File.signed file signedUrl backendFile
     in
     ( State <|
         { state
@@ -221,7 +212,7 @@ uploadFileToSignedUrl signedUrl file (State state) =
 ---- VIEW ----
 
 
-view : State -> Config msg -> Html msg
+view : State file -> Config msg -> Html msg
 view (State state) (Config config) =
     div []
         [ dropZone state config
@@ -229,7 +220,7 @@ view (State state) (Config config) =
         ]
 
 
-dropZone : StateRec -> ConfigRec msg -> Html msg
+dropZone : StateRec file -> ConfigRec msg -> Html msg
 dropZone state config =
     div
         [ style
