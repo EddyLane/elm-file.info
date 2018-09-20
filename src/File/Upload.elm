@@ -16,6 +16,7 @@ port module File.Upload
         , init
         , inputId
         , maximumFileSize
+        , nameFn
         , onChangeFiles
         , uploadFile
         , uploadFileToSignedUrl
@@ -135,6 +136,12 @@ drag over leave drop (Config configRec) =
             , dragLeaveMsg = leave
             , dropMsg = drop
         }
+
+
+nameFn : (file -> String) -> Config msg file -> Config msg file
+nameFn fn (Config configRec) =
+    Config <|
+        { configRec | nameFn = fn }
 
 
 maximumFileSize : Int -> Config msg file -> Config msg file

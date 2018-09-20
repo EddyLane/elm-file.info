@@ -199,6 +199,7 @@ uploadConfig =
         |> Upload.browseFiles OpenFileBrowser
         |> Upload.drag DragFilesOver DragFilesLeave DropFiles
         |> Upload.inputId "elm-file-example"
+        |> Upload.nameFn .reference
 
 
 view : Model -> Html Msg
