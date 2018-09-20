@@ -19,17 +19,29 @@ signedUrlProviderUrl =
     "http://localhost:3003/signed-upload-url"
 
 
+getAttachmentsUrl : String
+getAttachmentsUrl =
+    "http://localhost:3003/attachments"
+
+
 
 ---- MODEL ----
 
 
-type alias Model =
-    Upload.State Attachment
+type Model
+    = Loaded (PageState Attachment)
+    | Loading
+
+
+type alias PageState file =
+    { files : List Attachment
+    , upload : Upload.State file
+    }
 
 
 init : ( Model, Cmd Msg )
 init =
-    ( Upload.init
+    ( Loading
     , Cmd.none
     )
 
@@ -75,50 +87,81 @@ type Msg
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    case model of
+        Loading ->
+            ( model, Cmd.none )
+
+        Loaded pageState ->
+            updatePage msg pageState
+                |> Tuple.mapFirst Loaded
+
+
+updatePage : Msg -> PageState Attachment -> ( PageState Attachment, Cmd Msg )
+updatePage msg pageState =
     case msg of
         DragFilesOver _ ->
-            ( Upload.dropActive True model
+            ( { pageState | upload = Upload.dropActive True pageState.upload }
             , Cmd.none
             )
 
         DragFilesLeave _ ->
-            ( Upload.dropActive False model
+            ( { pageState | upload = Upload.dropActive False pageState.upload }
             , Cmd.none
             )
 
         OpenFileBrowser inputID ->
-            ( model
+            ( pageState
             , Upload.browseClick inputID
             )
 
         DropFiles { dataTransfer } ->
-            model
-                |> Upload.dropActive False
-                |> Upload.base64EncodeFiles dataTransfer.files
+            let
+                ( upload, base64Cmd ) =
+                    pageState.upload
+                        |> Upload.dropActive False
+                        |> Upload.base64EncodeFiles dataTransfer.files
+            in
+            ( { pageState | upload = upload }
+            , base64Cmd
+            )
 
         InputFiles _ files ->
-            Upload.base64EncodeFiles files model
+            let
+                ( upload, base64Cmd ) =
+                    pageState.upload
+                        |> Upload.dropActive False
+                        |> Upload.base64EncodeFiles files
+            in
+            ( { pageState | upload = upload }
+            , base64Cmd
+            )
 
         Base64EncodeFile (Ok file) ->
-            ( Upload.fileReadSuccess file model
+            ( { pageState | upload = Upload.fileReadSuccess file pageState.upload }
             , Task.attempt (GetSignedS3Url file) getSignedUrl
             )
 
         Base64EncodeFile (Err err) ->
-            ( model
+            ( pageState
             , Cmd.none
             )
 
         GetSignedS3Url file (Ok { attachment, signedUrl }) ->
-            Upload.uploadFileToSignedUrl signedUrl attachment file model
+            let
+                ( upload, uploadCmd ) =
+                    Upload.uploadFileToSignedUrl signedUrl attachment file pageState.upload
+            in
+            ( { pageState | upload = upload }
+            , uploadCmd
+            )
 
         GetSignedS3Url _ (Err e) ->
-            ( model
+            ( pageState
             , Cmd.none
             )
 
         NoOp ->
-            ( model
+            ( pageState
             , Cmd.none
             )
 
@@ -149,16 +192,21 @@ uploadConfig =
 
 view : Model -> Html Msg
 view model =
-    div
-        [ style
-            [ ( "width", "700px" )
-            , ( "border", "1px solid #000" )
-            ]
-        ]
-        [ Upload.view model uploadConfig
-        , hr [] []
-        , FileList.view model
-        ]
+    case model of
+        Loaded { upload } ->
+            div
+                [ style
+                    [ ( "width", "700px" )
+                    , ( "border", "1px solid #000" )
+                    ]
+                ]
+                [ Upload.view upload uploadConfig
+                , hr [] []
+                , FileList.view upload
+                ]
+
+        Loading ->
+            text "Loading..."
 
 
 
@@ -176,8 +224,13 @@ base64EncodeFileSub requests =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.batch
-        [ Sub.map Base64EncodeFile (base64EncodeFileSub <| Upload.getReading model) ]
+    case model of
+        Loaded { upload } ->
+            Sub.batch
+                [ Sub.map Base64EncodeFile (base64EncodeFileSub <| Upload.getReading upload) ]
+
+        Loading ->
+            Sub.none
 
 
 
