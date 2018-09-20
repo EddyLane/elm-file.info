@@ -28,8 +28,8 @@ viewRow : Upload.Config msg file -> File.UploadState file -> Html msg
 viewRow config file =
     tr []
         [ th [] [ viewThumbnail file ]
-        , th [] [ Upload.fileName config file |> text ]
-        , th [] [ file |> File.uploadProgress |> toString |> text ]
+        , th [] [ text <| Upload.fileName config file ]
+        , th [] [ text <| toString (File.uploadProgress file) ]
         ]
 
 

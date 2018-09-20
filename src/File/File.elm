@@ -4,13 +4,14 @@ port module File.File
         , FileReadPortResponse
         , FileSigned
         , UploadState
+        , base64PortDecoder
         , fileContentRead
-        , filePortDecoder
         , lifeCycleReading
         , lifeCycleSigning
         , lifeCycleUploaded
         , lifeCycleUploading
         , name
+        , popUploadingRequest
         , readCmds
         , removeReadRequest
         , removeSigningRequest
@@ -20,6 +21,7 @@ port module File.File
         , thumbnailSrc
         , uploadCmds
         , uploadProgress
+        , uploaded
         )
 
 import Date exposing (Date)
@@ -42,7 +44,7 @@ port readFileContent : ( Int, Decode.Value ) -> Cmd msg
 port upload : ( Int, String, String ) -> Cmd msg
 
 
-port uploaded : ( Int, Bool ) -> Cmd msg
+port uploaded : (Int -> msg) -> Sub msg
 
 
 
@@ -139,6 +141,22 @@ removeSigningRequest (FileSigned (FileReadPortResponse (FileReadPortRequest requ
     List.filter (\(FileReadPortResponse (FileReadPortRequest id _) _) -> id /= requestId)
 
 
+popUploadingRequest : Int -> List (FileSigned file) -> ( List (FileSigned file), Maybe file )
+popUploadingRequest requestId =
+    List.foldl
+        (\current ( unchanged, maybeFound ) ->
+            let
+                (FileSigned (FileReadPortResponse (FileReadPortRequest id _) _) _ backendFile) =
+                    current
+            in
+            if requestId == id then
+                ( unchanged, Just backendFile )
+            else
+                ( current :: unchanged, maybeFound )
+        )
+        ( [], Nothing )
+
+
 request : Int -> Drag.File -> FileReadPortRequest
 request =
     FileReadPortRequest
@@ -218,8 +236,8 @@ base64Encoded (FileReadPortResponse _ base64Encoded) =
 ---- ENCODING ----
 
 
-filePortDecoder : List FileReadPortRequest -> Decode.Decoder FileReadPortResponse
-filePortDecoder requests =
+base64PortDecoder : List FileReadPortRequest -> Decode.Decoder FileReadPortResponse
+base64PortDecoder requests =
     Decode.field "id" Decode.int
         |> Decode.andThen
             (\requestId ->

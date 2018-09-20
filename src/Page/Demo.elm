@@ -77,11 +77,12 @@ type Msg
     = NoOp
     | OpenFileBrowser String
     | InputFiles String (List Drag.File)
-    | Base64EncodeFile (Result String File.FileReadPortResponse)
+    | Base64EncodedFile (Result String File.FileReadPortResponse)
     | DragFilesOver Drag.Event
     | DragFilesLeave Drag.Event
     | DropFiles Drag.Event
-    | GetSignedS3Url File.FileReadPortResponse (Result Http.Error AttachmentResponse)
+    | GotSignedS3Url File.FileReadPortResponse (Result Http.Error AttachmentResponse)
+    | UploadedFile (Result String Int)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -124,17 +125,17 @@ update msg model =
             , base64Cmd
             )
 
-        Base64EncodeFile (Ok file) ->
+        Base64EncodedFile (Ok file) ->
             ( { model | upload = Upload.fileReadSuccess file model.upload }
-            , Task.attempt (GetSignedS3Url file) getSignedUrl
+            , Task.attempt (GotSignedS3Url file) getSignedUrl
             )
 
-        Base64EncodeFile (Err err) ->
+        Base64EncodedFile (Err err) ->
             ( model
             , Cmd.none
             )
 
-        GetSignedS3Url file (Ok { attachment, signedUrl }) ->
+        GotSignedS3Url file (Ok { attachment, signedUrl }) ->
             let
                 ( upload, uploadCmd ) =
                     Upload.uploadFileToSignedUrl signedUrl attachment file model.upload
@@ -143,7 +144,29 @@ update msg model =
             , uploadCmd
             )
 
-        GetSignedS3Url _ (Err e) ->
+        GotSignedS3Url _ (Err e) ->
+            ( model
+            , Cmd.none
+            )
+
+        UploadedFile (Ok requestId) ->
+            let
+                ( upload, maybeAttachment ) =
+                    Upload.fileUploadSuccess requestId model.upload
+
+                files =
+                    maybeAttachment
+                        |> Maybe.map (\attachment -> attachment :: model.files)
+                        |> Maybe.withDefault model.files
+            in
+            ( { model
+                | upload = upload
+                , files = files
+              }
+            , Cmd.none
+            )
+
+        UploadedFile (Err e) ->
             ( model
             , Cmd.none
             )
@@ -198,9 +221,17 @@ view { upload, files } =
 
 base64EncodeFileSub : List File.FileReadPortRequest -> Sub (Result String File.FileReadPortResponse)
 base64EncodeFileSub requests =
-    File.fileContentRead (Decode.decodeValue <| File.filePortDecoder requests)
+    File.fileContentRead (Decode.decodeValue <| File.base64PortDecoder requests)
+
+
+fileUploadedSub : Sub Msg
+fileUploadedSub =
+    File.uploaded (Ok >> UploadedFile)
 
 
 subscriptions : Model -> Sub Msg
 subscriptions { upload } =
-    Sub.map Base64EncodeFile (base64EncodeFileSub <| Upload.getReading upload)
+    Sub.batch
+        [ Sub.map Base64EncodedFile (base64EncodeFileSub <| Upload.getReading upload)
+        , fileUploadedSub
+        ]

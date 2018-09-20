@@ -10,6 +10,7 @@ port module File.Upload
         , dropActive
         , fileName
         , fileReadSuccess
+        , fileUploadSuccess
         , files
         , getReading
         , init
@@ -199,6 +200,17 @@ fileReadSuccess file (State state) =
             | reading = File.removeReadRequest file state.reading
             , signing = file :: state.signing
         }
+
+
+fileUploadSuccess : Int -> State file -> ( State file, Maybe file )
+fileUploadSuccess requestId (State state) =
+    let
+        ( uploading, maybeBackendFile ) =
+            File.popUploadingRequest requestId state.uploading
+    in
+    ( State { state | uploading = uploading }
+    , maybeBackendFile
+    )
 
 
 uploadFileToSignedUrl : SignedUrl -> file -> File.FileReadPortResponse -> State file -> ( State file, Cmd msg )
