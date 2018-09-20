@@ -26,8 +26,8 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
             const uploadRequest = new XMLHttpRequest();
             uploadRequest.open('PUT', signedUrl, true);
 
-            uploadRequest.onload = (oEvent) => {
-                // Uploaded.
+            uploadRequest.onload = () => {
+                app.ports.uploaded.send(id);
             };
 
             uploadRequest.send(blob);
