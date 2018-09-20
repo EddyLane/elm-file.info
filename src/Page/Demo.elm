@@ -168,7 +168,7 @@ getSignedUrl =
 ---- VIEW ----
 
 
-uploadConfig : Upload.Config Msg
+uploadConfig : Upload.Config Msg Attachment
 uploadConfig =
     Upload.config NoOp
         |> Upload.maximumFileSize 500
@@ -179,7 +179,7 @@ uploadConfig =
 
 
 view : Model -> Html Msg
-view { upload } =
+view { upload, files } =
     div
         [ style
             [ ( "width", "700px" )
@@ -188,7 +188,7 @@ view { upload } =
         ]
         [ Upload.view upload uploadConfig
         , hr [] []
-        , FileList.view upload
+        , FileList.view uploadConfig upload files
         ]
 
 

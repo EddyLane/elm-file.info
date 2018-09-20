@@ -6,8 +6,8 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 
 
-view : Upload.State file -> Html msg
-view upload =
+view : Upload.Config msg file -> Upload.State file -> List file -> Html msg
+view config upload files =
     table []
         [ thead []
             [ tr []
@@ -17,18 +17,18 @@ view upload =
                 ]
             ]
         , tbody []
-            (upload
-                |> Upload.files
-                |> List.map viewRow
+            (files
+                |> Upload.files upload
+                |> List.map (viewRow config)
             )
         ]
 
 
-viewRow : File.UploadState file -> Html msg
-viewRow file =
+viewRow : Upload.Config msg file -> File.UploadState file -> Html msg
+viewRow config file =
     tr []
         [ th [] [ viewThumbnail file ]
-        , th [] [ file |> File.name |> text ]
+        , th [] [ Upload.fileName config file |> text ]
         , th [] [ file |> File.uploadProgress |> toString |> text ]
         ]
 

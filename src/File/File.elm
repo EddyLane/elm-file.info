@@ -178,8 +178,8 @@ isImage file =
             False
 
 
-name : UploadState file -> String
-name file =
+name : (file -> String) -> UploadState file -> String
+name uploadedFn file =
     case file of
         ReadingBase64 request ->
             .name <| fileFromRequest request
@@ -190,8 +190,8 @@ name file =
         UploadingToS3 signed ->
             .name <| fileFromSigned signed
 
-        Uploaded _ ->
-            "NOT IMPLEMENTED YET"
+        Uploaded uploaded ->
+            uploadedFn uploaded
 
 
 fileFromSigned : FileSigned file -> Drag.File

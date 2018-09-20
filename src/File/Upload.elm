@@ -8,6 +8,7 @@ port module File.Upload
         , config
         , drag
         , dropActive
+        , fileName
         , fileReadSuccess
         , files
         , getReading
@@ -55,11 +56,11 @@ type alias StateRec file =
     }
 
 
-type Config msg
-    = Config (ConfigRec msg)
+type Config msg file
+    = Config (ConfigRec msg file)
 
 
-type alias ConfigRec msg =
+type alias ConfigRec msg file =
     { onChangeFilesMsg : String -> List Drag.File -> msg
     , uploadFileMsg : File.FileReadPortRequest -> msg
     , softDeleteSelectedMsg : msg
@@ -69,6 +70,7 @@ type alias ConfigRec msg =
     , dropMsg : Drag.Event -> msg
     , maximumFileSize : Int
     , inputId : String
+    , nameFn : file -> String
     }
 
 
@@ -84,7 +86,7 @@ init =
         }
 
 
-config : msg -> Config msg
+config : msg -> Config msg file
 config noOpMsg =
     Config <|
         { onChangeFilesMsg = always (always noOpMsg)
@@ -96,34 +98,35 @@ config noOpMsg =
         , uploadFileMsg = always noOpMsg
         , maximumFileSize = 5000
         , inputId = "elm-file-upload-input"
+        , nameFn = always "-"
         }
 
 
-onChangeFiles : (String -> List Drag.File -> msg) -> Config msg -> Config msg
+onChangeFiles : (String -> List Drag.File -> msg) -> Config msg file -> Config msg file
 onChangeFiles msg (Config configRec) =
     Config <|
         { configRec | onChangeFilesMsg = msg }
 
 
-inputId : String -> Config msg -> Config msg
+inputId : String -> Config msg file -> Config msg file
 inputId inputId (Config configRec) =
     Config <|
         { configRec | inputId = inputId }
 
 
-softDelete : msg -> Config msg -> Config msg
+softDelete : msg -> Config msg file -> Config msg file
 softDelete msg (Config configRec) =
     Config <|
         { configRec | softDeleteSelectedMsg = msg }
 
 
-browseFiles : (String -> msg) -> Config msg -> Config msg
+browseFiles : (String -> msg) -> Config msg file -> Config msg file
 browseFiles msg (Config configRec) =
     Config <|
         { configRec | browseClickMsg = msg }
 
 
-drag : (Drag.Event -> msg) -> (Drag.Event -> msg) -> (Drag.Event -> msg) -> Config msg -> Config msg
+drag : (Drag.Event -> msg) -> (Drag.Event -> msg) -> (Drag.Event -> msg) -> Config msg file -> Config msg file
 drag over leave drop (Config configRec) =
     Config <|
         { configRec
@@ -133,13 +136,13 @@ drag over leave drop (Config configRec) =
         }
 
 
-maximumFileSize : Int -> Config msg -> Config msg
+maximumFileSize : Int -> Config msg file -> Config msg file
 maximumFileSize size (Config configRec) =
     Config <|
         { configRec | maximumFileSize = size }
 
 
-uploadFile : (File.FileReadPortRequest -> msg) -> Config msg -> Config msg
+uploadFile : (File.FileReadPortRequest -> msg) -> Config msg file -> Config msg file
 uploadFile msg (Config configRec) =
     Config <|
         { configRec | uploadFileMsg = msg }
@@ -150,14 +153,19 @@ getReading (State { reading }) =
     reading
 
 
-files : State file -> List (File.UploadState file)
-files (State { reading, signing, uploading }) =
+files : State file -> List file -> List (File.UploadState file)
+files (State { reading, signing, uploading }) uploaded =
     List.concat
         [ List.map File.lifeCycleReading reading
         , List.map File.lifeCycleSigning signing
         , List.map File.lifeCycleUploading uploading
-        , []
+        , List.map File.lifeCycleUploaded uploaded
         ]
+
+
+fileName : Config msg file -> File.UploadState file -> String
+fileName (Config { nameFn }) file =
+    File.name nameFn file
 
 
 
@@ -212,7 +220,7 @@ uploadFileToSignedUrl signedUrl backendFile file (State state) =
 ---- VIEW ----
 
 
-view : State file -> Config msg -> Html msg
+view : State file -> Config msg file -> Html msg
 view (State state) (Config config) =
     div []
         [ dropZone state config
@@ -220,7 +228,7 @@ view (State state) (Config config) =
         ]
 
 
-dropZone : StateRec file -> ConfigRec msg -> Html msg
+dropZone : StateRec file -> ConfigRec msg file -> Html msg
 dropZone state config =
     div
         [ style
@@ -258,7 +266,7 @@ dropZone state config =
         ]
 
 
-fileInput : ConfigRec msg -> Html msg
+fileInput : ConfigRec msg file -> Html msg
 fileInput { inputId, onChangeFilesMsg } =
     input
         [ style [ ( "display", "none" ) ]
