@@ -89,6 +89,7 @@ type Msg
     | GotSignedS3Url File.FileReadPortResponse (Result Http.Error AttachmentResponse)
     | UploadedFile (Result String Int)
     | UploadProgress Int Float
+    | CancelUpload Upload.UploadState
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -155,8 +156,14 @@ update msg model =
             , Cmd.none
             )
 
-        UploadProgress id progress ->
-            ( { model | upload = Upload.updateS3UploadProgress id progress model.upload }
+        UploadProgress requestId progress ->
+            ( { model | upload = Upload.updateS3UploadProgress requestId progress model.upload }
+            , Cmd.none
+            )
+
+        CancelUpload requestId ->
+            ( model
+              --            , Upload.uploadCancelled requestId
             , Cmd.none
             )
 
@@ -200,6 +207,7 @@ getSignedUrl file =
 
 
 
+--deleteAttachment :
 --downloadFile : Attachment
 ---- VIEW ----
 

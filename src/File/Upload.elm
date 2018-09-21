@@ -2,6 +2,7 @@ port module File.Upload
     exposing
         ( Config
         , State
+        , UploadState
         , base64EncodeFiles
         , browseClick
         , browseFiles
@@ -16,14 +17,20 @@ port module File.Upload
         , getReading
         , init
         , inputId
+        , lifeCycleReading
+        , lifeCycleSigning
+        , lifeCycleUploaded
+        , lifeCycleUploading
         , maximumFileSize
         , nameFn
         , onChangeFiles
         , thumbnailSrc
         , thumbnailSrcFn
         , updateS3UploadProgress
+        , uploadCancelled
         , uploadFile
         , uploadFileToSignedUrl
+        , uploadPercentage
         , uploadProgress
         , view
         )
@@ -48,8 +55,18 @@ port browseClick : String -> Cmd msg
 port uploadProgress : (( Int, Float ) -> msg) -> Sub msg
 
 
+port uploadCancelled : Int -> Cmd msg
+
+
 
 ---- STATE ----
+
+
+type UploadState file
+    = ReadingBase64 File.FileReadPortRequest
+    | GettingSignedS3Url File.FileReadPortResponse
+    | UploadingToS3 (File.FileSigned file)
+    | Uploaded file
 
 
 type State file
@@ -84,6 +101,26 @@ type alias ConfigRec msg file =
     , contentTypeFn : file -> String
     , thumbnailSrcFn : file -> String
     }
+
+
+lifeCycleReading : File.FileReadPortRequest -> UploadState file
+lifeCycleReading =
+    ReadingBase64
+
+
+lifeCycleSigning : File.FileReadPortResponse -> UploadState file
+lifeCycleSigning =
+    GettingSignedS3Url
+
+
+lifeCycleUploading : File.FileSigned file -> UploadState file
+lifeCycleUploading =
+    UploadingToS3
+
+
+lifeCycleUploaded : file -> UploadState file
+lifeCycleUploaded =
+    Uploaded
 
 
 init : State file
@@ -185,24 +222,94 @@ getReading (State { reading }) =
     reading
 
 
-files : State file -> List file -> List (File.UploadState file)
+files : State file -> List file -> List (UploadState file)
 files (State { reading, signing, uploading }) uploaded =
     List.concat
-        [ List.map File.lifeCycleReading reading
-        , List.map File.lifeCycleSigning signing
-        , List.map File.lifeCycleUploading uploading
-        , List.map File.lifeCycleUploaded uploaded
+        [ List.map lifeCycleReading reading
+        , List.map lifeCycleSigning signing
+        , List.map lifeCycleUploading uploading
+        , List.map lifeCycleUploaded uploaded
         ]
 
 
-fileName : Config msg file -> File.UploadState file -> String
+fileName : Config msg file -> UploadState file -> String
 fileName (Config { nameFn }) file =
-    File.name nameFn file
+    case file of
+        ReadingBase64 request ->
+            .name <| File.fileFromRequest request
+
+        GettingSignedS3Url response ->
+            .name <| File.fileFromResponse response
+
+        UploadingToS3 signed ->
+            .name <| File.fileFromSigned signed
+
+        Uploaded uploaded ->
+            nameFn uploaded
 
 
-thumbnailSrc : Config msg file -> File.UploadState file -> String
+thumbnailSrc : Config msg file -> UploadState file -> String
 thumbnailSrc (Config { thumbnailSrcFn, contentTypeFn }) file =
-    File.thumbnailSrc thumbnailSrcFn contentTypeFn file
+    case ( isImage contentTypeFn file, file ) of
+        ( True, GettingSignedS3Url response ) ->
+            File.base64EncodedSigning response
+
+        ( True, UploadingToS3 response ) ->
+            File.base64EncodedUploading response
+
+        ( True, Uploaded file ) ->
+            thumbnailSrcFn file
+
+        _ ->
+            ""
+
+
+name : (file -> String) -> UploadState file -> String
+name uploadedFn file =
+    case file of
+        ReadingBase64 request ->
+            .name <| File.fileFromRequest request
+
+        GettingSignedS3Url response ->
+            .name <| File.fileFromResponse response
+
+        UploadingToS3 signed ->
+            .name <| File.fileFromSigned signed
+
+        Uploaded uploaded ->
+            uploadedFn uploaded
+
+
+uploadPercentage : UploadState file -> Float
+uploadPercentage file =
+    case file of
+        ReadingBase64 _ ->
+            0.0
+
+        GettingSignedS3Url _ ->
+            10.0
+
+        UploadingToS3 file ->
+            File.progress file
+
+        Uploaded _ ->
+            100.0
+
+
+isImage : (file -> String) -> UploadState file -> Bool
+isImage contentTypeFn file =
+    case file of
+        ReadingBase64 request ->
+            File.isImageReading request
+
+        GettingSignedS3Url request ->
+            File.isImageSigning request
+
+        UploadingToS3 request ->
+            File.isImageUploading request
+
+        Uploaded backendFile ->
+            String.startsWith "image" (contentTypeFn backendFile)
 
 
 
@@ -253,7 +360,7 @@ uploadFileToSignedUrl : SignedUrl -> file -> File.FileReadPortResponse -> State 
 uploadFileToSignedUrl signedUrl backendFile file (State state) =
     let
         signedFile =
-            File.signed file signedUrl 40 backendFile
+            File.signed file signedUrl 10 backendFile
     in
     ( State <|
         { state
@@ -271,6 +378,10 @@ updateS3UploadProgress id progress (State state) =
 
 
 
+--cancelUpload : File.UploadState -> State file -> State file
+--cancelUpload file (State state) =
+--    case file of
+--
 ---- VIEW ----
 
 

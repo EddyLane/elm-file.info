@@ -24,15 +24,15 @@ view config upload files =
         ]
 
 
-viewRow : Upload.Config msg file -> File.UploadState file -> Html msg
+viewRow : Upload.Config msg file -> Upload.UploadState file -> Html msg
 viewRow config file =
     tr []
         [ th [] [ viewThumbnail config file ]
         , th [] [ text <| Upload.fileName config file ]
-        , th [] [ text <| toString (File.uploadProgress file) ]
+        , th [] [ text <| toString (Upload.uploadPercentage file) ]
         ]
 
 
-viewThumbnail : Upload.Config msg file -> File.UploadState file -> Html msg
+viewThumbnail : Upload.Config msg file -> Upload.UploadState file -> Html msg
 viewThumbnail config file =
     img [ src (Upload.thumbnailSrc config file) ] []

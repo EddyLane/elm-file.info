@@ -3,15 +3,18 @@ port module File.File
         ( FileReadPortRequest
         , FileReadPortResponse
         , FileSigned
-        , UploadState
+        , base64EncodedSigning
+        , base64EncodedUploading
         , base64PortDecoder
         , fileContentRead
-        , lifeCycleReading
-        , lifeCycleSigning
-        , lifeCycleUploaded
-        , lifeCycleUploading
-        , name
+        , fileFromRequest
+        , fileFromResponse
+        , fileFromSigned
+        , isImageReading
+        , isImageSigning
+        , isImageUploading
         , popUploadingRequest
+        , progress
         , readCmds
         , removeReadRequest
         , removeSigningRequest
@@ -19,10 +22,8 @@ port module File.File
         , requests
         , signed
         , signedUrlMetadataEncoder
-        , thumbnailSrc
         , updateUploadProgress
         , uploadCmds
-        , uploadProgress
         , uploaded
         )
 
@@ -65,33 +66,6 @@ type FileSigned file
     = FileSigned FileReadPortResponse SignedUrl Float file
 
 
-type UploadState file
-    = ReadingBase64 FileReadPortRequest
-    | GettingSignedS3Url FileReadPortResponse
-    | UploadingToS3 (FileSigned file)
-    | Uploaded file
-
-
-lifeCycleReading : FileReadPortRequest -> UploadState file
-lifeCycleReading =
-    ReadingBase64
-
-
-lifeCycleSigning : FileReadPortResponse -> UploadState file
-lifeCycleSigning =
-    GettingSignedS3Url
-
-
-lifeCycleUploading : FileSigned file -> UploadState file
-lifeCycleUploading =
-    UploadingToS3
-
-
-lifeCycleUploaded : file -> UploadState file
-lifeCycleUploaded =
-    Uploaded
-
-
 requests : Int -> List Drag.File -> List FileReadPortRequest
 requests requestId =
     List.indexedMap (\i file -> request (i + requestId) file)
@@ -117,20 +91,9 @@ uploadCmds signed =
         |> Cmd.batch
 
 
-uploadProgress : UploadState file -> Float
-uploadProgress file =
-    case file of
-        ReadingBase64 _ ->
-            0.0
-
-        GettingSignedS3Url _ ->
-            10.0
-
-        UploadingToS3 (FileSigned _ _ progress _) ->
-            progress
-
-        Uploaded _ ->
-            100.0
+progress : FileSigned file -> Float
+progress (FileSigned _ _ progress _) =
+    progress
 
 
 removeReadRequest : FileReadPortResponse -> List FileReadPortRequest -> List FileReadPortRequest
@@ -169,52 +132,19 @@ signed =
     FileSigned
 
 
-thumbnailSrc : (file -> String) -> (file -> String) -> UploadState file -> String
-thumbnailSrc thumbnailSrcFn contentTypeFn file =
-    case ( isImage contentTypeFn file, file ) of
-        ( True, GettingSignedS3Url response ) ->
-            base64Encoded response
-
-        ( True, UploadingToS3 (FileSigned response _ _ _) ) ->
-            base64Encoded response
-
-        ( True, Uploaded file ) ->
-            thumbnailSrcFn file
-
-        _ ->
-            ""
+isImageReading : FileReadPortRequest -> Bool
+isImageReading (FileReadPortRequest _ _) =
+    False
 
 
-isImage : (file -> String) -> UploadState file -> Bool
-isImage contentTypeFn file =
-    case file of
-        ReadingBase64 (FileReadPortRequest _ _) ->
-            False
-
-        GettingSignedS3Url (FileReadPortResponse (FileReadPortRequest _ { typeMIME }) _) ->
-            String.startsWith "image" typeMIME
-
-        UploadingToS3 (FileSigned (FileReadPortResponse (FileReadPortRequest _ { typeMIME }) _) _ _ _) ->
-            String.startsWith "image" typeMIME
-
-        Uploaded backendFile ->
-            String.startsWith "image" (contentTypeFn backendFile)
+isImageSigning : FileReadPortResponse -> Bool
+isImageSigning (FileReadPortResponse (FileReadPortRequest _ { typeMIME }) _) =
+    String.startsWith "image" typeMIME
 
 
-name : (file -> String) -> UploadState file -> String
-name uploadedFn file =
-    case file of
-        ReadingBase64 request ->
-            .name <| fileFromRequest request
-
-        GettingSignedS3Url response ->
-            .name <| fileFromResponse response
-
-        UploadingToS3 signed ->
-            .name <| fileFromSigned signed
-
-        Uploaded uploaded ->
-            uploadedFn uploaded
+isImageUploading : FileSigned file -> Bool
+isImageUploading (FileSigned (FileReadPortResponse (FileReadPortRequest _ { typeMIME }) _) _ _ _) =
+    String.startsWith "image" typeMIME
 
 
 fileFromSigned : FileSigned file -> Drag.File
@@ -232,8 +162,13 @@ fileFromRequest (FileReadPortRequest _ file) =
     file
 
 
-base64Encoded : FileReadPortResponse -> String
-base64Encoded (FileReadPortResponse _ base64Encoded) =
+base64EncodedSigning : FileReadPortResponse -> String
+base64EncodedSigning (FileReadPortResponse _ base64Encoded) =
+    base64Encoded
+
+
+base64EncodedUploading : FileSigned file -> String
+base64EncodedUploading (FileSigned (FileReadPortResponse _ base64Encoded) _ _ _) =
     base64Encoded
 
 
@@ -242,13 +177,68 @@ updateUploadProgress requestId newProgress =
     List.map
         (\((FileSigned (FileReadPortResponse (FileReadPortRequest id rawFile) base64File) signedUrl oldProgress backendFile) as file) ->
             if id == requestId then
-                FileSigned (FileReadPortResponse (FileReadPortRequest id rawFile) base64File) signedUrl newProgress backendFile
+                FileSigned (FileReadPortResponse (FileReadPortRequest id rawFile) base64File) signedUrl (newProgress - 10) backendFile
             else
                 file
         )
 
 
 
+--cancelUpload :
+--    UploadState file
+--    ->
+--        { a
+--            | reading : List FileReadPortRequest
+--            , signing : List FileReadPortResponse
+--            , uploading : List (FileSigned file)
+--            , uploaded : List file
+--        }
+--    ->
+--        { a
+--            | reading : List FileReadPortRequest
+--            , signing : List FileReadPortResponse
+--            , uploading : List (FileSigned file)
+--            , uploaded : List file
+--        }
+--cancelUpload file state =
+--    case file of
+--        ReadingBase64 (FileReadPortRequest requestId _) ->
+--            { state
+--                | reading =
+--                    List.filter
+--                        (\(FileReadPortRequest id _) ->
+--                            id /= requestId
+--                        )
+--                        state.reading
+--            }
+--
+--        GettingSignedS3Url (FileReadPortResponse (FileReadPortRequest requestId _) _) ->
+--            { state
+--                | signing =
+--                    List.filter
+--                        (\(FileReadPortResponse (FileReadPortRequest id _) _) ->
+--                            id /= requestId
+--                        )
+--                        state.signing
+--            }
+--
+--        UploadingToS3 (FileSigned (FileReadPortResponse (FileReadPortRequest requestId _) _) _ _ _) ->
+--            { state
+--                | uploading =
+--                    List.filter
+--                        (\(FileSigned (FileReadPortResponse (FileReadPortRequest id _) _) _ _ _) ->
+--                            id /= requestId
+--                        )
+--                        state.uploading
+--            }
+--
+--        Uploaded file ->
+--            state
+--
+--
+--        UploadingToS3
+--
+--        Uploaded
 ---- ENCODING ----
 --encodeFileWithoutMetadata : Drag.File -> Encode.Value
 --encodeFileWithoutMetadata file =
