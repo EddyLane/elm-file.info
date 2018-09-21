@@ -89,7 +89,7 @@ type Msg
     | GotSignedS3Url File.FileReadPortResponse (Result Http.Error AttachmentResponse)
     | UploadedFile (Result String Int)
     | UploadProgress Int Float
-    | CancelUpload Upload.UploadState
+    | CancelUpload (Upload.UploadState Attachment)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -161,10 +161,13 @@ update msg model =
             , Cmd.none
             )
 
-        CancelUpload requestId ->
-            ( model
-              --            , Upload.uploadCancelled requestId
-            , Cmd.none
+        CancelUpload file ->
+            let
+                ( upload, cancelCmd ) =
+                    Upload.cancelUpload file model.upload
+            in
+            ( { model | upload = upload }
+            , cancelCmd
             )
 
         UploadedFile (Ok requestId) ->
@@ -219,6 +222,7 @@ uploadConfig =
         |> Upload.onChangeFiles InputFiles
         |> Upload.browseFiles OpenFileBrowser
         |> Upload.drag DragFilesOver DragFilesLeave DropFiles
+        |> Upload.cancelUploadMsg CancelUpload
         |> Upload.inputId "elm-file-example"
         |> Upload.nameFn .fileName
         |> Upload.contentTypeFn .contentType

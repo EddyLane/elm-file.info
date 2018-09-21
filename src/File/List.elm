@@ -4,6 +4,7 @@ import File.File as File
 import File.Upload as Upload
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (onClick)
 
 
 view : Upload.Config msg file -> Upload.State file -> List file -> Html msg
@@ -14,6 +15,7 @@ view config upload files =
                 [ th [] []
                 , th [] [ text "Filename" ]
                 , th [] [ text "Progress" ]
+                , th [] []
                 ]
             ]
         , tbody []
@@ -27,9 +29,10 @@ view config upload files =
 viewRow : Upload.Config msg file -> Upload.UploadState file -> Html msg
 viewRow config file =
     tr []
-        [ th [] [ viewThumbnail config file ]
-        , th [] [ text <| Upload.fileName config file ]
-        , th [] [ text <| toString (Upload.uploadPercentage file) ]
+        [ td [] [ viewThumbnail config file ]
+        , td [] [ text <| Upload.fileName config file ]
+        , td [] [ text <| toString (Upload.uploadPercentage file) ]
+        , td [] [ button [ onClick (Upload.cancelTrigger config file) ] [ text "Cancel" ] ]
         ]
 
 

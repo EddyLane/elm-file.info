@@ -10,6 +10,11 @@ port module File.File
         , fileFromRequest
         , fileFromResponse
         , fileFromSigned
+        , fileReadSuccess
+        , fileSigningSuccess
+        , idFromRequest
+        , idFromResponse
+        , idFromSigned
         , isImageReading
         , isImageSigning
         , isImageUploading
@@ -18,6 +23,7 @@ port module File.File
         , readCmds
         , removeReadRequest
         , removeSigningRequest
+        , removeUploadingRequest
         , request
         , requests
         , signed
@@ -96,14 +102,35 @@ progress (FileSigned _ _ progress _) =
     progress
 
 
-removeReadRequest : FileReadPortResponse -> List FileReadPortRequest -> List FileReadPortRequest
-removeReadRequest (FileReadPortResponse (FileReadPortRequest requestId _) _) =
+fileReadSuccess : FileReadPortResponse -> List FileReadPortRequest -> List FileReadPortRequest
+fileReadSuccess (FileReadPortResponse request _) =
+    removeReadRequest request
+
+
+fileSigningSuccess : FileSigned file -> List FileReadPortResponse -> List FileReadPortResponse
+fileSigningSuccess (FileSigned response _ _ _) =
+    removeSigningRequest response
+
+
+removeReadRequest : FileReadPortRequest -> List FileReadPortRequest -> List FileReadPortRequest
+removeReadRequest (FileReadPortRequest requestId _) =
     List.filter (\(FileReadPortRequest id _) -> id /= requestId)
 
 
-removeSigningRequest : FileSigned file -> List FileReadPortResponse -> List FileReadPortResponse
-removeSigningRequest (FileSigned (FileReadPortResponse (FileReadPortRequest requestId _) _) _ _ _) =
+removeSigningRequest : FileReadPortResponse -> List FileReadPortResponse -> List FileReadPortResponse
+removeSigningRequest (FileReadPortResponse (FileReadPortRequest requestId _) _) =
     List.filter (\(FileReadPortResponse (FileReadPortRequest id _) _) -> id /= requestId)
+
+
+removeUploadingRequest : FileSigned file -> List (FileSigned file) -> List (FileSigned file)
+removeUploadingRequest (FileSigned (FileReadPortResponse (FileReadPortRequest requestId _) _) _ _ _) =
+    popUploadingRequest requestId >> Tuple.first
+
+
+
+--removeUploadingRequest : FileSigned file -> List FileReadPortResponse -> List FileReadPortResponse
+--removeUploadingRequest (FileSigned (FileReadPortResponse (FileReadPortRequest requestId _) _) _ _ _) =
+--    List.filter (\(FileReadPortResponse (FileReadPortRequest id _) _) -> id /= requestId)
 
 
 popUploadingRequest : Int -> List (FileSigned file) -> ( List (FileSigned file), Maybe file )
@@ -162,6 +189,21 @@ fileFromRequest (FileReadPortRequest _ file) =
     file
 
 
+idFromSigned : FileSigned file -> Int
+idFromSigned (FileSigned response _ _ _) =
+    idFromResponse response
+
+
+idFromResponse : FileReadPortResponse -> Int
+idFromResponse (FileReadPortResponse request _) =
+    idFromRequest request
+
+
+idFromRequest : FileReadPortRequest -> Int
+idFromRequest (FileReadPortRequest id _) =
+    id
+
+
 base64EncodedSigning : FileReadPortResponse -> String
 base64EncodedSigning (FileReadPortResponse _ base64Encoded) =
     base64Encoded
@@ -177,7 +219,7 @@ updateUploadProgress requestId newProgress =
     List.map
         (\((FileSigned (FileReadPortResponse (FileReadPortRequest id rawFile) base64File) signedUrl oldProgress backendFile) as file) ->
             if id == requestId then
-                FileSigned (FileReadPortResponse (FileReadPortRequest id rawFile) base64File) signedUrl (newProgress - 10) backendFile
+                FileSigned (FileReadPortResponse (FileReadPortRequest id rawFile) base64File) signedUrl newProgress backendFile
             else
                 file
         )

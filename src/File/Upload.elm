@@ -6,6 +6,9 @@ port module File.Upload
         , base64EncodeFiles
         , browseClick
         , browseFiles
+        , cancelTrigger
+        , cancelUpload
+        , cancelUploadMsg
         , config
         , contentTypeFn
         , drag
@@ -94,6 +97,7 @@ type alias ConfigRec msg file =
     , browseClickMsg : String -> msg
     , dragOverMsg : Drag.Event -> msg
     , dragLeaveMsg : Drag.Event -> msg
+    , cancelUploadMsg : UploadState file -> msg
     , dropMsg : Drag.Event -> msg
     , maximumFileSize : Int
     , inputId : String
@@ -141,6 +145,7 @@ config noOpMsg =
         { onChangeFilesMsg = always (always noOpMsg)
         , softDeleteSelectedMsg = noOpMsg
         , browseClickMsg = always noOpMsg
+        , cancelUploadMsg = always noOpMsg
         , dragOverMsg = always noOpMsg
         , dragLeaveMsg = always noOpMsg
         , dropMsg = always noOpMsg
@@ -175,6 +180,12 @@ browseFiles : (String -> msg) -> Config msg file -> Config msg file
 browseFiles msg (Config configRec) =
     Config <|
         { configRec | browseClickMsg = msg }
+
+
+cancelUploadMsg : (UploadState file -> msg) -> Config msg file -> Config msg file
+cancelUploadMsg msg (Config configRec) =
+    Config <|
+        { configRec | cancelUploadMsg = msg }
 
 
 drag : (Drag.Event -> msg) -> (Drag.Event -> msg) -> (Drag.Event -> msg) -> Config msg file -> Config msg file
@@ -290,7 +301,7 @@ uploadPercentage file =
             10.0
 
         UploadingToS3 file ->
-            File.progress file
+            File.progress file - 10
 
         Uploaded _ ->
             100.0
@@ -340,7 +351,7 @@ fileReadSuccess : File.FileReadPortResponse -> State file -> State file
 fileReadSuccess file (State state) =
     State <|
         { state
-            | reading = File.removeReadRequest file state.reading
+            | reading = File.fileReadSuccess file state.reading
             , signing = file :: state.signing
         }
 
@@ -364,7 +375,7 @@ uploadFileToSignedUrl signedUrl backendFile file (State state) =
     in
     ( State <|
         { state
-            | signing = File.removeSigningRequest signedFile state.signing
+            | signing = File.fileSigningSuccess signedFile state.signing
             , uploading = signedFile :: state.uploading
         }
     , File.uploadCmds [ signedFile ]
@@ -377,11 +388,44 @@ updateS3UploadProgress id progress (State state) =
         { state | uploading = File.updateUploadProgress id progress state.uploading }
 
 
+cancelTrigger : Config msg file -> UploadState file -> msg
+cancelTrigger (Config { cancelUploadMsg }) file =
+    cancelUploadMsg file
 
---cancelUpload : File.UploadState -> State file -> State file
---cancelUpload file (State state) =
---    case file of
+
+cancelUpload : UploadState file -> State file -> ( State file, Cmd msg )
+cancelUpload file (State state) =
+    case file of
+        ReadingBase64 request ->
+            ( State { state | reading = File.removeReadRequest request state.reading }
+            , Cmd.none
+            )
+
+        GettingSignedS3Url response ->
+            ( State { state | signing = File.removeSigningRequest response state.signing }
+            , uploadCancelled (File.idFromResponse response)
+            )
+
+        UploadingToS3 signed ->
+            ( State { state | uploading = File.removeUploadingRequest signed state.uploading }
+            , uploadCancelled (File.idFromSigned signed)
+            )
+
+        _ ->
+            ( State state, Cmd.none )
+
+
+
 --
+--        UploadingToS3 request ->
+--            { state
+--                | uploading =
+--                    List.filter
+--                        (\(FileSigned (FileReadPortResponse (FileReadPortRequest id _) _) _ _ _) ->
+--                            id /= requestId
+--                        )
+--                        state.uploading
+--            }
 ---- VIEW ----
 
 
