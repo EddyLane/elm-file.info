@@ -2,9 +2,11 @@ const express = require('express');
 const AWS = require('aws-sdk');
 const uuidv4 = require('uuid/v4');
 const cors = require('cors');
+const bodyParser = require('body-parser');
 
 const app = express();
 app.use(cors());
+app.use(bodyParser.json());
 
 const config = {
     port: process.env.PORT || 3003,
@@ -20,7 +22,6 @@ if (!config.accessKeyId || !config.secretAccessKey) {
 }
 
 
-let fileId = 1;
 let files = {};
 
 AWS.config.update({
@@ -30,31 +31,38 @@ AWS.config.update({
 
 const S3 = new AWS.S3();
 
-app.get('/signed-upload-url', (req, res) => {
+app.post('/signed-upload-url', ({body: {contentType, fileName}}, res) => {
 
     const reference = uuidv4();
 
     console.log(`Request received (${reference})`);
-
+    console.log(`contentType (${reference})`, contentType);
+    console.log(`fileName (${reference})`, fileName);
     const s3Params = {
         Bucket: config.bucket,
         Key: reference,
-        ContentType: 'image/png'
+        ContentType: contentType
     };
 
     const attachment = {
-        reference
+        reference,
+        fileName,
+        contentType,
+        date: new Date
     };
 
-    files[fileId] = attachment;
-    fileId++;
+    files[reference] = attachment;
 
-    res.json({
-        signedUrl: {
-            signedUrl: S3.getSignedUrl('putObject', s3Params),
-            reference
-        },
-        attachment
+    S3.getSignedUrl('putObject', s3Params, (err, signedUrl) => {
+
+        res.json({
+            signedUrl: {
+                signedUrl,
+                reference,
+            },
+            attachment
+        });
+
     });
 
 
@@ -64,9 +72,23 @@ app.get('/get-attachments', (req, res) => {
     res.json(Object.values(files));
 });
 
-app.get('/download', (req, res) => {
+app.get('/download/:reference', ({params: {reference}}, res) => {
 
+    const file = files[reference];
 
+    if (!file) {
+        res.status(404);
+        res.send("Unknown file reference");
+        return;
+    }
+
+    const s3Params = {
+        Bucket: config.bucket,
+        Key: reference
+    };
+
+    res.attachment(file.fileName);
+    S3.getObject(s3Params).createReadStream().pipe(res);
 
 });
 

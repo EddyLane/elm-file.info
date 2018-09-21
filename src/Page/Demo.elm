@@ -60,6 +60,8 @@ type alias AttachmentResponse =
 
 type alias Attachment =
     { reference : String
+    , contentType : String
+    , fileName : String
     }
 
 
@@ -67,9 +69,12 @@ attachmentDecoder : Decode.Decoder Attachment
 attachmentDecoder =
     Pipeline.decode Attachment
         |> Pipeline.required "reference" Decode.string
+        |> Pipeline.required "contentType" Decode.string
+        |> Pipeline.required "fileName" Decode.string
 
 
 
+--        |> Pipeline.required "contentType" Decode.string
 ---- UPDATE ----
 
 
@@ -83,6 +88,7 @@ type Msg
     | DropFiles Drag.Event
     | GotSignedS3Url File.FileReadPortResponse (Result Http.Error AttachmentResponse)
     | UploadedFile (Result String Int)
+    | UploadProgress Int Float
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -127,7 +133,7 @@ update msg model =
 
         Base64EncodedFile (Ok file) ->
             ( { model | upload = Upload.fileReadSuccess file model.upload }
-            , Task.attempt (GotSignedS3Url file) getSignedUrl
+            , Task.attempt (GotSignedS3Url file) (getSignedUrl file)
             )
 
         Base64EncodedFile (Err err) ->
@@ -146,6 +152,11 @@ update msg model =
 
         GotSignedS3Url _ (Err e) ->
             ( model
+            , Cmd.none
+            )
+
+        UploadProgress id progress ->
+            ( { model | upload = Upload.updateS3UploadProgress id progress model.upload }
             , Cmd.none
             )
 
@@ -177,9 +188,10 @@ update msg model =
             )
 
 
-getSignedUrl : Task Http.Error AttachmentResponse
-getSignedUrl =
-    Http.get signedUrlProviderUrl
+getSignedUrl : File.FileReadPortResponse -> Task Http.Error AttachmentResponse
+getSignedUrl file =
+    Http.post signedUrlProviderUrl
+        (Http.jsonBody <| File.signedUrlMetadataEncoder file)
         (Pipeline.decode AttachmentResponse
             |> Pipeline.required "attachment" attachmentDecoder
             |> Pipeline.required "signedUrl" SignedUrl.decoder
@@ -188,6 +200,7 @@ getSignedUrl =
 
 
 
+--downloadFile : Attachment
 ---- VIEW ----
 
 
@@ -199,7 +212,9 @@ uploadConfig =
         |> Upload.browseFiles OpenFileBrowser
         |> Upload.drag DragFilesOver DragFilesLeave DropFiles
         |> Upload.inputId "elm-file-example"
-        |> Upload.nameFn .reference
+        |> Upload.nameFn .fileName
+        |> Upload.contentTypeFn .contentType
+        |> Upload.thumbnailSrcFn (\attachment -> "http://localhost:3003/download/" ++ attachment.reference)
 
 
 view : Model -> Html Msg
@@ -230,9 +245,15 @@ fileUploadedSub =
     File.uploaded (Ok >> UploadedFile)
 
 
+fileUploadProgressSub : Sub Msg
+fileUploadProgressSub =
+    Upload.uploadProgress (\( id, progress ) -> UploadProgress id progress)
+
+
 subscriptions : Model -> Sub Msg
 subscriptions { upload } =
     Sub.batch
         [ Sub.map Base64EncodedFile (base64EncodeFileSub <| Upload.getReading upload)
         , fileUploadedSub
+        , fileUploadProgressSub
         ]

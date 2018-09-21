@@ -6,6 +6,7 @@ port module File.Upload
         , browseClick
         , browseFiles
         , config
+        , contentTypeFn
         , drag
         , dropActive
         , fileName
@@ -18,8 +19,12 @@ port module File.Upload
         , maximumFileSize
         , nameFn
         , onChangeFiles
+        , thumbnailSrc
+        , thumbnailSrcFn
+        , updateS3UploadProgress
         , uploadFile
         , uploadFileToSignedUrl
+        , uploadProgress
         , view
         )
 
@@ -38,6 +43,9 @@ import Mouse
 
 
 port browseClick : String -> Cmd msg
+
+
+port uploadProgress : (( Int, Float ) -> msg) -> Sub msg
 
 
 
@@ -73,6 +81,8 @@ type alias ConfigRec msg file =
     , maximumFileSize : Int
     , inputId : String
     , nameFn : file -> String
+    , contentTypeFn : file -> String
+    , thumbnailSrcFn : file -> String
     }
 
 
@@ -101,6 +111,8 @@ config noOpMsg =
         , maximumFileSize = 5000
         , inputId = "elm-file-upload-input"
         , nameFn = always "-"
+        , contentTypeFn = always "-"
+        , thumbnailSrcFn = always ""
         }
 
 
@@ -144,6 +156,18 @@ nameFn fn (Config configRec) =
         { configRec | nameFn = fn }
 
 
+contentTypeFn : (file -> String) -> Config msg file -> Config msg file
+contentTypeFn fn (Config configRec) =
+    Config <|
+        { configRec | contentTypeFn = fn }
+
+
+thumbnailSrcFn : (file -> String) -> Config msg file -> Config msg file
+thumbnailSrcFn fn (Config configRec) =
+    Config <|
+        { configRec | thumbnailSrcFn = fn }
+
+
 maximumFileSize : Int -> Config msg file -> Config msg file
 maximumFileSize size (Config configRec) =
     Config <|
@@ -174,6 +198,11 @@ files (State { reading, signing, uploading }) uploaded =
 fileName : Config msg file -> File.UploadState file -> String
 fileName (Config { nameFn }) file =
     File.name nameFn file
+
+
+thumbnailSrc : Config msg file -> File.UploadState file -> String
+thumbnailSrc (Config { thumbnailSrcFn, contentTypeFn }) file =
+    File.thumbnailSrc thumbnailSrcFn contentTypeFn file
 
 
 
@@ -224,7 +253,7 @@ uploadFileToSignedUrl : SignedUrl -> file -> File.FileReadPortResponse -> State 
 uploadFileToSignedUrl signedUrl backendFile file (State state) =
     let
         signedFile =
-            File.signed file signedUrl backendFile
+            File.signed file signedUrl 40 backendFile
     in
     ( State <|
         { state
@@ -233,6 +262,12 @@ uploadFileToSignedUrl signedUrl backendFile file (State state) =
         }
     , File.uploadCmds [ signedFile ]
     )
+
+
+updateS3UploadProgress : Int -> Float -> State file -> State file
+updateS3UploadProgress id progress (State state) =
+    State <|
+        { state | uploading = File.updateUploadProgress id progress state.uploading }
 
 
 

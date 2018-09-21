@@ -10,7 +10,7 @@ app.ports.readFileContent.subscribe(([id, file]) => {
     const reader = new FileReader();
 
     reader.onload = (({target: {result}}) => {
-        app.ports.fileContentRead.send({id, result})
+        app.ports.fileContentRead.send({id, result});
     });
 
     reader.readAsDataURL(file);
@@ -29,6 +29,14 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
             uploadRequest.onload = () => {
                 app.ports.uploaded.send(id);
             };
+
+            uploadRequest.upload.addEventListener('progress', (event) => {
+                if (event.lengthComputable) {
+                    console.log(event);
+
+                    app.ports.uploadProgress.send([id, event.loaded / event.total * 100]);
+                }
+            });
 
             uploadRequest.send(blob);
 
