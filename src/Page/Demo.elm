@@ -1,10 +1,12 @@
 module Page.Demo exposing (Model, Msg, init, subscriptions, update, view)
 
+--import File.File as File
+
 import Drag
-import File.File as File
 import File.List as FileList
 import File.SignedUrl as SignedUrl exposing (SignedUrl)
 import File.Upload as Upload
+import File.UploadId as UploadId exposing (UploadId)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Http
@@ -82,13 +84,13 @@ type Msg
     = NoOp
     | OpenFileBrowser String
     | InputFiles String (List Drag.File)
-    | Base64EncodedFile (Result String File.FileReadPortResponse)
+    | Base64EncodedFile (Result String ( UploadId, Upload.UploadingFile Attachment ))
     | DragFilesOver Drag.Event
     | DragFilesLeave Drag.Event
     | DropFiles Drag.Event
-    | GotSignedS3Url File.FileReadPortResponse (Result Http.Error AttachmentResponse)
-    | UploadedFile (Result String Int)
-    | UploadProgress Int Float
+    | GotSignedS3Url UploadId (Result Http.Error AttachmentResponse)
+    | UploadedFile (Result String UploadId)
+    | UploadProgress UploadId Float
     | CancelUpload (Upload.UploadState Attachment)
 
 
@@ -132,9 +134,9 @@ update msg model =
             , base64Cmd
             )
 
-        Base64EncodedFile (Ok file) ->
-            ( { model | upload = Upload.fileReadSuccess file model.upload }
-            , Task.attempt (GotSignedS3Url file) (getSignedUrl file)
+        Base64EncodedFile (Ok ( id, file )) ->
+            ( { model | upload = Upload.fileReadSuccess id file model.upload }
+            , Task.attempt (GotSignedS3Url id) (getSignedUrl file)
             )
 
         Base64EncodedFile (Err err) ->
@@ -142,66 +144,62 @@ update msg model =
             , Cmd.none
             )
 
-        GotSignedS3Url file (Ok { attachment, signedUrl }) ->
-            let
-                ( upload, uploadCmd ) =
-                    Upload.uploadFileToSignedUrl signedUrl attachment file model.upload
-            in
-            ( { model | upload = upload }
-            , uploadCmd
-            )
-
+        --        GotSignedS3Url file (Ok { attachment, signedUrl }) ->
+        --            let
+        --                ( upload, uploadCmd ) =
+        --                    Upload.uploadFileToSignedUrl signedUrl attachment file model.upload
+        --            in
+        --            ( { model | upload = upload }
+        --            , uploadCmd
+        --            )
         GotSignedS3Url _ (Err e) ->
             ( model
             , Cmd.none
             )
 
-        UploadProgress requestId progress ->
-            ( { model | upload = Upload.updateS3UploadProgress requestId progress model.upload }
-            , Cmd.none
-            )
-
-        CancelUpload file ->
-            let
-                ( upload, cancelCmd ) =
-                    Upload.cancelUpload file model.upload
-            in
-            ( { model | upload = upload }
-            , cancelCmd
-            )
-
-        UploadedFile (Ok requestId) ->
-            let
-                ( upload, maybeAttachment ) =
-                    Upload.fileUploadSuccess requestId model.upload
-
-                files =
-                    maybeAttachment
-                        |> Maybe.map (\attachment -> attachment :: model.files)
-                        |> Maybe.withDefault model.files
-            in
-            ( { model
-                | upload = upload
-                , files = files
-              }
-            , Cmd.none
-            )
-
+        --        UploadProgress requestId progress ->
+        --            ( { model | upload = Upload.updateS3UploadProgress requestId progress model.upload }
+        --            , Cmd.none
+        --            )
+        --        CancelUpload file ->
+        --            let
+        --                ( upload, cancelCmd ) =
+        --                    Upload.cancelUpload file model.upload
+        --            in
+        --            ( { model | upload = upload }
+        --            , cancelCmd
+        --            )
+        --        UploadedFile (Ok requestId) ->
+        --            let
+        --                ( upload, maybeAttachment ) =
+        --                    Upload.fileUploadSuccess requestId model.upload
+        --
+        --                files =
+        --                    maybeAttachment
+        --                        |> Maybe.map (\attachment -> attachment :: model.files)
+        --                        |> Maybe.withDefault model.files
+        --            in
+        --            ( { model
+        --                | upload = upload
+        --                , files = files
+        --              }
+        --            , Cmd.none
+        --            )
         UploadedFile (Err e) ->
             ( model
             , Cmd.none
             )
 
-        NoOp ->
+        _ ->
             ( model
             , Cmd.none
             )
 
 
-getSignedUrl : File.FileReadPortResponse -> Task Http.Error AttachmentResponse
+getSignedUrl : Upload.UploadingFile file -> Task Http.Error AttachmentResponse
 getSignedUrl file =
     Http.post signedUrlProviderUrl
-        (Http.jsonBody <| File.signedUrlMetadataEncoder file)
+        (Http.jsonBody <| Upload.signedUrlMetadataEncoder file)
         (Pipeline.decode AttachmentResponse
             |> Pipeline.required "attachment" attachmentDecoder
             |> Pipeline.required "signedUrl" SignedUrl.decoder
@@ -247,25 +245,33 @@ view { upload, files } =
 ---- SUBSCRIPTIONS ----
 
 
-base64EncodeFileSub : List File.FileReadPortRequest -> Sub (Result String File.FileReadPortResponse)
-base64EncodeFileSub requests =
-    File.fileContentRead (Decode.decodeValue <| File.base64PortDecoder requests)
+base64EncodeFileSub : Upload.State file -> Sub (Result String ( UploadId, Upload.UploadingFile file ))
+base64EncodeFileSub upload =
+    Upload.fileContentRead (Decode.decodeValue <| Upload.base64PortDecoder upload)
 
 
 fileUploadedSub : Sub Msg
 fileUploadedSub =
-    File.uploaded (Ok >> UploadedFile)
+    Upload.uploaded (Decode.decodeValue UploadId.decoder >> UploadedFile)
 
 
 fileUploadProgressSub : Sub Msg
 fileUploadProgressSub =
-    Upload.uploadProgress (\( id, progress ) -> UploadProgress id progress)
+    Upload.uploadProgress
+        (\( id, progress ) ->
+            case Decode.decodeValue UploadId.decoder id of
+                Ok uploadId ->
+                    UploadProgress uploadId progress
+
+                Err _ ->
+                    NoOp
+        )
 
 
 subscriptions : Model -> Sub Msg
 subscriptions { upload } =
     Sub.batch
-        [ Sub.map Base64EncodedFile (base64EncodeFileSub <| Upload.getReading upload)
+        [ Sub.map Base64EncodedFile (base64EncodeFileSub upload)
         , fileUploadedSub
         , fileUploadProgressSub
         ]

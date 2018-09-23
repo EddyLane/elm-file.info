@@ -33,9 +33,9 @@ port module File.File
         , uploaded
         )
 
-import Date exposing (Date)
 import Drag
 import File.SignedUrl as SignedUrl exposing (SignedUrl)
+import File.UploadId as UploadId exposing (UploadId)
 import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
@@ -47,13 +47,13 @@ import Json.Encode as Encode
 port fileContentRead : (Encode.Value -> msg) -> Sub msg
 
 
-port readFileContent : ( Int, Decode.Value ) -> Cmd msg
+port readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
 
 
-port upload : ( Int, String, String ) -> Cmd msg
+port upload : ( Encode.Value, String, String ) -> Cmd msg
 
 
-port uploaded : (Int -> msg) -> Sub msg
+port uploaded : (Encode.Value -> msg) -> Sub msg
 
 
 
@@ -61,7 +61,7 @@ port uploaded : (Int -> msg) -> Sub msg
 
 
 type FileReadPortRequest
-    = FileReadPortRequest Int Drag.File
+    = FileReadPortRequest UploadId Drag.File
 
 
 type FileReadPortResponse
@@ -72,9 +72,9 @@ type FileSigned file
     = FileSigned FileReadPortResponse SignedUrl Float file
 
 
-requests : Int -> List Drag.File -> List FileReadPortRequest
+requests : UploadId -> List Drag.File -> List FileReadPortRequest
 requests requestId =
-    List.indexedMap (\i file -> request (i + requestId) file)
+    List.indexedMap (\i file -> FileReadPortRequest (UploadId.update i requestId) file)
 
 
 readCmds : List FileReadPortRequest -> Cmd msg
@@ -82,7 +82,7 @@ readCmds requests =
     requests
         |> List.map
             (\(FileReadPortRequest id request) ->
-                readFileContent ( id, request.data )
+                readFileContent ( UploadId.encoder id, request.data )
             )
         |> Cmd.batch
 
@@ -92,7 +92,7 @@ uploadCmds signed =
     signed
         |> List.map
             (\(FileSigned (FileReadPortResponse (FileReadPortRequest id _) base64File) signedUrl _ _) ->
-                upload ( id, SignedUrl.toString signedUrl, base64File )
+                upload ( UploadId.encoder id, SignedUrl.toString signedUrl, base64File )
             )
         |> Cmd.batch
 
@@ -127,13 +127,7 @@ removeUploadingRequest (FileSigned (FileReadPortResponse (FileReadPortRequest re
     popUploadingRequest requestId >> Tuple.first
 
 
-
---removeUploadingRequest : FileSigned file -> List FileReadPortResponse -> List FileReadPortResponse
---removeUploadingRequest (FileSigned (FileReadPortResponse (FileReadPortRequest requestId _) _) _ _ _) =
---    List.filter (\(FileReadPortResponse (FileReadPortRequest id _) _) -> id /= requestId)
-
-
-popUploadingRequest : Int -> List (FileSigned file) -> ( List (FileSigned file), Maybe file )
+popUploadingRequest : UploadId -> List (FileSigned file) -> ( List (FileSigned file), Maybe file )
 popUploadingRequest requestId =
     List.foldl
         (\current ( unchanged, maybeFound ) ->
@@ -149,7 +143,7 @@ popUploadingRequest requestId =
         ( [], Nothing )
 
 
-request : Int -> Drag.File -> FileReadPortRequest
+request : UploadId -> Drag.File -> FileReadPortRequest
 request =
     FileReadPortRequest
 
@@ -189,17 +183,17 @@ fileFromRequest (FileReadPortRequest _ file) =
     file
 
 
-idFromSigned : FileSigned file -> Int
+idFromSigned : FileSigned file -> UploadId
 idFromSigned (FileSigned response _ _ _) =
     idFromResponse response
 
 
-idFromResponse : FileReadPortResponse -> Int
+idFromResponse : FileReadPortResponse -> UploadId
 idFromResponse (FileReadPortResponse request _) =
     idFromRequest request
 
 
-idFromRequest : FileReadPortRequest -> Int
+idFromRequest : FileReadPortRequest -> UploadId
 idFromRequest (FileReadPortRequest id _) =
     id
 
@@ -214,7 +208,7 @@ base64EncodedUploading (FileSigned (FileReadPortResponse _ base64Encoded) _ _ _)
     base64Encoded
 
 
-updateUploadProgress : Int -> Float -> List (FileSigned file) -> List (FileSigned file)
+updateUploadProgress : UploadId -> Float -> List (FileSigned file) -> List (FileSigned file)
 updateUploadProgress requestId newProgress =
     List.map
         (\((FileSigned (FileReadPortResponse (FileReadPortRequest id rawFile) base64File) signedUrl oldProgress backendFile) as file) ->
@@ -299,7 +293,7 @@ signedUrlMetadataEncoder (FileReadPortResponse (FileReadPortRequest _ { typeMIME
 
 base64PortDecoder : List FileReadPortRequest -> Decode.Decoder FileReadPortResponse
 base64PortDecoder requests =
-    Decode.field "id" Decode.int
+    Decode.field "id" UploadId.decoder
         |> Decode.andThen
             (\requestId ->
                 let

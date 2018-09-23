@@ -25,7 +25,7 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
         .catch(() => {
 
 
-            console.error(`Upload failure (${id}`);
+            console.error(`Upload failure (${id})`);
         })
         .then(res => res.blob())
         .then((blob) => {
@@ -36,7 +36,7 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
                 if (id !== cancelRequestId) {
                     return;
                 }
-                console.info(`Upload cancelled (${id}`);
+                console.info(`Upload cancelled (${id})`);
                 uploadRequest.abort();
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
@@ -46,13 +46,13 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
             uploadRequest.open('PUT', signedUrl, true);
 
             uploadRequest.onload = () => {
-                console.info(`Upload success (${id}`);
+                console.info(`Upload success (${id})`);
                 app.ports.uploaded.send(id);
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
 
             uploadRequest.onerror = () => {
-                console.error(`Upload failure (${id}`);
+                console.error(`Upload failure (${id})`);
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
 
@@ -62,7 +62,7 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
 
                     const progress = event.loaded / event.total * 100;
 
-                    console.debug(`Upload progress ${parseFloat(progress)} (${id}`);
+                    console.debug(`Upload progress ${parseFloat(progress)} (${id})`);
 
                     app.ports.uploadProgress.send([
                         id,
