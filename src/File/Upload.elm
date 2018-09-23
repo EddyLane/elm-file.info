@@ -36,7 +36,7 @@ port module File.Upload
           --        , updateS3UploadProgressogress
         , uploadCancelled
           --        , uploadFile
-          --        , uploadFileToSignedUrl
+        , uploadFileToSignedUrl
         , uploadPercentage
         , uploadProgress
         , uploaded
@@ -96,7 +96,7 @@ type UploadingFile file
 type UploadStatus file
     = ReadingBase64
     | GettingSignedS3Url String
-    | UploadingToS3 String Float file
+    | UploadingToS3 String SignedUrl Float file
 
 
 type State file
@@ -295,7 +295,7 @@ thumbnailSrc (Config { thumbnailSrcFn, contentTypeFn }) file =
         ( True, Uploading (UploadingFile _ (GettingSignedS3Url base64Encoded)) ) ->
             base64Encoded
 
-        ( True, Uploading (UploadingFile _ (UploadingToS3 base64Encoded _ _)) ) ->
+        ( True, Uploading (UploadingFile _ (UploadingToS3 base64Encoded _ _ _)) ) ->
             base64Encoded
 
         ( True, Uploaded file ) ->
@@ -308,7 +308,7 @@ thumbnailSrc (Config { thumbnailSrcFn, contentTypeFn }) file =
 uploadPercentage : UploadState file -> Float
 uploadPercentage file =
     case file of
-        Uploading (UploadingFile _ (UploadingToS3 _ percentage _)) ->
+        Uploading (UploadingFile _ (UploadingToS3 _ _ percentage _)) ->
             percentage
 
         Uploaded _ ->
@@ -458,19 +458,49 @@ fileReadSuccess uploadId file (State state) =
 --    )
 --
 --
---uploadFileToSignedUrl : SignedUrl -> file -> File.FileReadPortResponse -> State file -> ( State file, Cmd msg )
---uploadFileToSignedUrl signedUrl backendFile file (State state) =
---    let
---        signedFile =
---            File.signed file signedUrl 10 backendFile
---    in
---    ( State <|
---        { state
---            | signing = File.fileSigningSuccess signedFile state.signing
---            , uploading = signedFile :: state.uploading
---        }
---    , File.uploadCmds [ signedFile ]
---    )
+
+
+uploadFileToSignedUrl : SignedUrl -> file -> UploadId -> State file -> ( State file, Cmd msg )
+uploadFileToSignedUrl signedUrl backendFile uploadId (State state) =
+    let
+        ( uploads, cmd ) =
+            case UploadId.get uploadId state.uploads of
+                Just (UploadingFile rawFile (GettingSignedS3Url base64)) ->
+                    let
+                        uploadingFile =
+                            UploadingFile rawFile (UploadingToS3 base64 signedUrl 0.0 backendFile)
+                    in
+                    ( UploadId.insert uploadId uploadingFile state.uploads
+                    , uploadCmds [ ( uploadId, uploadingFile ) ]
+                    )
+
+                _ ->
+                    ( state.uploads
+                    , Cmd.none
+                    )
+    in
+    ( State <|
+        { state | uploads = uploads }
+    , cmd
+    )
+
+
+uploadCmds : List ( UploadId, UploadingFile file ) -> Cmd msg
+uploadCmds files =
+    files
+        |> List.map
+            (\( id, uploadingFile ) ->
+                case uploadingFile of
+                    UploadingFile _ (UploadingToS3 base64 signedUrl _ _) ->
+                        upload ( UploadId.encoder id, SignedUrl.toString signedUrl, base64 )
+
+                    _ ->
+                        Cmd.none
+            )
+        |> Cmd.batch
+
+
+
 --
 --
 --updateS3UploadProgress : UploadId -> Float -> State file -> State file
@@ -608,11 +638,7 @@ base64PortDecoder (State { uploads }) =
     Decode.field "id" UploadId.decoder
         |> Decode.andThen
             (\requestId ->
-                let
-                    maybeRequest =
-                        UploadId.get requestId uploads
-                in
-                case maybeRequest of
+                case UploadId.get requestId uploads of
                     Just (UploadingFile rawFile _) ->
                         Pipeline.decode GettingSignedS3Url
                             |> Pipeline.required "result" Decode.string
