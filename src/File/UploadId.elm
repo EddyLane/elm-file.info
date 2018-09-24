@@ -44,8 +44,8 @@ get (UploadId id) (Collection _ collection) =
 
 
 insert : file -> Collection file -> ( UploadId, Collection file )
-insert file (Collection (UploadId id) collection) =
-    ( UploadId (id + 1)
+insert file (Collection ((UploadId id) as uploadId) collection) =
+    ( uploadId
     , Dict.insert id file collection
         |> Collection (UploadId (id + 1))
     )

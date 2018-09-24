@@ -1,5 +1,7 @@
 module Page.Demo exposing (Model, Msg, init, subscriptions, update, view)
 
+import Date exposing (Date)
+import Date.Extra
 import Drag
 import File.List as FileList
 import File.SignedUrl as SignedUrl exposing (SignedUrl)
@@ -30,13 +32,14 @@ getAttachmentsUrl =
 
 type alias Model =
     { upload : Upload.State Attachment
+    , list : FileList.State
     , files : List Attachment
     }
 
 
 init : Task Http.Error Model
 init =
-    Task.map (Model Upload.init) loadAttachments
+    Task.map (Model Upload.init FileList.init) loadAttachments
 
 
 loadAttachments : Task Http.Error (List Attachment)
@@ -59,22 +62,33 @@ type alias AttachmentResponse =
 
 
 type alias Attachment =
-    { reference : String
+    { uploadedAt : Date
+    , reference : String
     , contentType : String
     , fileName : String
+    , uploadedBy : String
     }
 
 
 attachmentDecoder : Decode.Decoder Attachment
 attachmentDecoder =
-    Pipeline.decode Attachment
-        |> Pipeline.required "reference" Decode.string
-        |> Pipeline.required "contentType" Decode.string
-        |> Pipeline.required "fileName" Decode.string
+    Decode.field "date" Decode.string
+        |> Decode.andThen
+            (\uploadedAt ->
+                case Date.fromString uploadedAt of
+                    Ok date ->
+                        Pipeline.decode (Attachment date)
+                            |> Pipeline.required "reference" Decode.string
+                            |> Pipeline.required "contentType" Decode.string
+                            |> Pipeline.required "fileName" Decode.string
+                            |> Pipeline.required "uploadedBy" Decode.string
+
+                    Err _ ->
+                        Decode.fail "Could not parse date"
+            )
 
 
 
---        |> Pipeline.required "contentType" Decode.string
 ---- UPDATE ----
 
 
@@ -90,6 +104,7 @@ type Msg
     | UploadedFile (Result String UploadId)
     | UploadProgress UploadId Float
     | CancelUpload UploadId
+    | SetListState FileList.State
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -192,6 +207,11 @@ update msg model =
             , Cmd.none
             )
 
+        SetListState state ->
+            ( { model | list = state }
+            , Cmd.none
+            )
+
         _ ->
             ( model
             , Cmd.none
@@ -210,8 +230,6 @@ getSignedUrl file =
 
 
 
---deleteAttachment :
---downloadFile : Attachment
 ---- VIEW ----
 
 
@@ -222,20 +240,33 @@ uploadConfig =
         |> Upload.onChangeFiles InputFiles
         |> Upload.browseFiles OpenFileBrowser
         |> Upload.drag DragFilesOver DragFilesLeave DropFiles
-        |> Upload.cancelUploadMsg CancelUpload
         |> Upload.inputId "elm-file-example"
 
 
-fileListConfig : FileList.Config Attachment
+fileListConfig : FileList.Config Attachment Msg
 fileListConfig =
-    FileList.config
+    FileList.config NoOp
         |> FileList.nameFn .fileName
         |> FileList.contentTypeFn .contentType
         |> FileList.thumbnailSrcFn (.reference >> (++) "http://localhost:3003/download/")
+        |> FileList.cancelUploadMsg CancelUpload
+        |> FileList.setListStateMsg SetListState
+        |> FileList.column
+            ( "Uploaded by"
+            , .uploadedBy >> text
+            , \a b -> compare a.uploadedBy b.uploadedBy
+            )
+        |> FileList.column
+            ( "Uploaded at"
+            , .uploadedAt
+                >> Date.Extra.toFormattedString "d MMM YYY HH:mm"
+                >> text
+            , \a b -> Date.Extra.compare a.uploadedAt b.uploadedAt
+            )
 
 
 view : Model -> Html Msg
-view { upload, files } =
+view { upload, files, list } =
     div
         [ style
             [ ( "width", "700px" )
@@ -244,7 +275,7 @@ view { upload, files } =
         ]
         [ Upload.view upload uploadConfig
         , hr [] []
-        , FileList.view fileListConfig upload files
+        , FileList.view list fileListConfig upload files
         ]
 
 

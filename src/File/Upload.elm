@@ -8,9 +8,7 @@ port module File.Upload
         , base64PortDecoder
         , browseClick
         , browseFiles
-        , cancelTrigger
         , cancelUpload
-        , cancelUploadMsg
         , config
         , drag
         , dropActive
@@ -74,9 +72,6 @@ port uploaded : (Encode.Value -> msg) -> Sub msg
 
 
 ---- STATE ----
---type UploadState file
---    = Uploading UploadId (UploadingFile file)
---    | Uploaded file
 
 
 type UploadingFile file
@@ -110,7 +105,6 @@ type alias ConfigRec msg =
     , browseClickMsg : String -> msg
     , dragOverMsg : Drag.Event -> msg
     , dragLeaveMsg : Drag.Event -> msg
-    , cancelUploadMsg : UploadId -> msg
     , dropMsg : Drag.Event -> msg
     , maximumFileSize : Int
     , inputId : String
@@ -137,7 +131,6 @@ config noOpMsg =
         { onChangeFilesMsg = always (always noOpMsg)
         , softDeleteSelectedMsg = noOpMsg
         , browseClickMsg = always noOpMsg
-        , cancelUploadMsg = always noOpMsg
         , dragOverMsg = always noOpMsg
         , dragLeaveMsg = always noOpMsg
         , dropMsg = always noOpMsg
@@ -170,12 +163,6 @@ browseFiles msg (Config configRec) =
         { configRec | browseClickMsg = msg }
 
 
-cancelUploadMsg : (UploadId -> msg) -> Config msg -> Config msg
-cancelUploadMsg msg (Config configRec) =
-    Config <|
-        { configRec | cancelUploadMsg = msg }
-
-
 drag : (Drag.Event -> msg) -> (Drag.Event -> msg) -> (Drag.Event -> msg) -> Config msg -> Config msg
 drag over leave drop (Config configRec) =
     Config <|
@@ -190,22 +177,6 @@ maximumFileSize : Int -> Config msg -> Config msg
 maximumFileSize size (Config configRec) =
     Config <|
         { configRec | maximumFileSize = size }
-
-
-
---getReading : State file -> List ( UploadId, Drag.File )
---getReading (State { uploads }) =
---    uploads
---        |> UploadId.toList
---        |> List.filterMap
---            (\upload ->
---                case upload of
---                    ( uploadId, UploadingFile dragFile ReadingBase64 ) ->
---                        Just ( uploadId, dragFile )
---
---                    _ ->
---                        Nothing
---            )
 
 
 uploads : State file -> UploadId.Collection (UploadingFile file)
@@ -255,41 +226,6 @@ dropActive isActive (State state) =
     State { state | dropActive = isActive }
 
 
-
---
---requests : UploadId -> List Drag.File -> List UploadingFile
---requests requestId =
---    List.indexedMap (\i file -> UploadingFile (UploadId.update i requestId) file)
---
---
---base64EncodeFiles : List Drag.File -> State file -> ( State file, Cmd msg )
---base64EncodeFiles files (State state) =
---    let
---        newRequests =
---            File.requests (UploadId.update 1 state.requestId) files
---
---        uploads =
---            files
---                |> List.indexedMap (,)
---                |> List.foldl
---                    (\acc ( index, file ) ->
---                        UploadId.insert (UploadId.update index state.requestId) file acc
---                    )
---                    state.uploads
---    in
---    ( State
---        { state
---            | update = state.reqading ++ newRequests
---            , requestId = UploadId.update (List.length reading) state.requestId
---        }
---    , readCmds newRequests
---    )
---requests : UploadId -> List Drag.File -> List UploadingFile
---requests requestId =
---    List.indexedMap (\i file -> UploadingFile (UploadId.update i requestId) file)
---
-
-
 base64EncodeFiles : List Drag.File -> State file -> ( State file, Cmd msg )
 base64EncodeFiles files (State state) =
     let
@@ -319,6 +255,7 @@ base64EncodeFiles files (State state) =
 readCmds : List UploadId -> UploadId.Collection (UploadingFile file) -> Cmd msg
 readCmds uploadIds collection =
     uploadIds
+        |> Debug.log "ids"
         |> List.filterMap
             (\id ->
                 collection
@@ -328,6 +265,7 @@ readCmds uploadIds collection =
                             readFileContent ( UploadId.encoder id, data )
                         )
             )
+        |> Debug.log "cmds"
         |> Cmd.batch
 
 
@@ -423,11 +361,6 @@ updateS3UploadProgress id progress (State state) =
                     )
                     state.uploads
         }
-
-
-cancelTrigger : Config msg -> UploadId -> msg
-cancelTrigger (Config { cancelUploadMsg }) uploadId =
-    cancelUploadMsg uploadId
 
 
 cancelUpload : UploadId -> State file -> ( State file, Cmd msg )

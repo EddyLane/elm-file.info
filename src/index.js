@@ -7,9 +7,14 @@ const app = Main.embed(document.getElementById('root'));
 
 app.ports.readFileContent.subscribe(([id, file]) => {
 
+    console.info(`PORT: Read base64 contents started (${id})`);
+
     const reader = new FileReader();
 
     reader.onload = (({target: {result}}) => {
+
+        console.info(`PORT: Read base64 contents success (${id})`);
+
         app.ports.fileContentRead.send({id, result});
     });
 
@@ -19,13 +24,11 @@ app.ports.readFileContent.subscribe(([id, file]) => {
 
 app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
 
-    console.info(`Upload started (${id})`);
+    console.info(`PORT: Upload started to ${signedUrl} (${id})`);
 
     fetch(base64Data)
         .catch(() => {
-
-
-            console.error(`Upload failure (${id})`);
+            console.error(`PORT: Upload failure (${id})`);
         })
         .then(res => res.blob())
         .then((blob) => {
@@ -36,7 +39,7 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
                 if (id !== cancelRequestId) {
                     return;
                 }
-                console.info(`Upload cancelled (${id})`);
+                console.info(`PORT: Upload cancelled (${id})`);
                 uploadRequest.abort();
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
@@ -46,13 +49,13 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
             uploadRequest.open('PUT', signedUrl, true);
 
             uploadRequest.onload = () => {
-                console.info(`Upload success (${id})`);
+                console.info(`PORT: Upload success (${id})`);
                 app.ports.uploaded.send(id);
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
 
             uploadRequest.onerror = () => {
-                console.error(`Upload failure (${id})`);
+                console.error(`PORT: Upload failure (${id})`);
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
 
@@ -62,7 +65,7 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
 
                     const progress = event.loaded / event.total * 100;
 
-                    console.debug(`Upload progress ${parseFloat(progress)} (${id})`);
+                    console.debug(`PORT: Upload progress ${parseFloat(progress)} (${id})`);
 
                     app.ports.uploadProgress.send([
                         id,
@@ -78,6 +81,8 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
 });
 
 app.ports.browseClick.subscribe((inputId) => {
+
+    console.info(`PORT: browseClick (${inputId})`);
 
     const element = document.getElementById(inputId);
 

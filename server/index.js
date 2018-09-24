@@ -46,6 +46,7 @@ app.post('/signed-upload-url', ({body: {contentType, fileName}}, res) => {
 
     const attachment = {
         reference,
+        uploadedBy: "Test User",
         fileName,
         contentType,
         date: new Date
