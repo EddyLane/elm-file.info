@@ -9,20 +9,16 @@ port module File.Upload
         , browseClick
         , browseFiles
         , cancelTrigger
+        , cancelUpload
         , cancelUploadMsg
         , config
         , contentTypeFn
         , drag
         , dropActive
         , fileContentRead
-          --        , lifeCycleReading
-          --        , lifeCycleSigning
-          --        , lifeCycleUploaded
-          --        , lifeCycleUploading
         , fileName
         , fileReadSuccess
-          --        , fileUploadSuccess
-          --        , files
+        , fileUploadSuccess
         , getReading
         , init
         , inputId
@@ -30,12 +26,10 @@ port module File.Upload
         , nameFn
         , onChangeFiles
         , signedUrlMetadataEncoder
-          --        , cancelUpload
         , thumbnailSrc
         , thumbnailSrcFn
-          --        , updateS3UploadProgressogress
+        , updateS3UploadProgress
         , uploadCancelled
-          --        , uploadFile
         , uploadFileToSignedUrl
         , uploadPercentage
         , uploadProgress
@@ -46,6 +40,7 @@ port module File.Upload
 --import File.File as File
 
 import Drag
+import File.Base64Encoded as Base64Encoded exposing (Base64Encoded)
 import File.SignedUrl as SignedUrl exposing (SignedUrl)
 import File.UploadId as UploadId exposing (UploadId)
 import Html exposing (..)
@@ -74,7 +69,7 @@ port fileContentRead : (Encode.Value -> msg) -> Sub msg
 port readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
 
 
-port upload : ( Encode.Value, String, String ) -> Cmd msg
+port upload : ( Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
 
 
 port uploaded : (Encode.Value -> msg) -> Sub msg
@@ -95,8 +90,8 @@ type UploadingFile file
 
 type UploadStatus file
     = ReadingBase64
-    | GettingSignedS3Url String
-    | UploadingToS3 String SignedUrl Float file
+    | GettingSignedS3Url Base64Encoded
+    | UploadingToS3 Base64Encoded SignedUrl Float file
 
 
 type State file
@@ -121,7 +116,7 @@ type alias ConfigRec msg file =
     , browseClickMsg : String -> msg
     , dragOverMsg : Drag.Event -> msg
     , dragLeaveMsg : Drag.Event -> msg
-    , cancelUploadMsg : UploadState file -> msg
+    , cancelUploadMsg : UploadId -> msg
     , dropMsg : Drag.Event -> msg
     , maximumFileSize : Int
     , inputId : String
@@ -134,22 +129,6 @@ type alias ConfigRec msg file =
 base64Success : ( UploadId, String ) -> State file -> State file
 base64Success ( uploadId, base64 ) (State state) =
     State state
-
-
-
---lifeCycleReading : File.FileReadPortRequest -> UploadState file
---lifeCycleReading =
---    ReadingBase64 >> Uploading
---
---
---lifeCycleSigning : File.FileReadPortResponse -> UploadState file
---lifeCycleSigning =
---    GettingSignedS3Url >> Uploading
---
---
---lifeCycleUploading : File.FileSigned file -> UploadState file
---lifeCycleUploading =
---    UploadingToS3 >> Uploading
 
 
 lifeCycleUploaded : file -> UploadState file
@@ -209,7 +188,7 @@ browseFiles msg (Config configRec) =
         { configRec | browseClickMsg = msg }
 
 
-cancelUploadMsg : (UploadState file -> msg) -> Config msg file -> Config msg file
+cancelUploadMsg : (UploadId -> msg) -> Config msg file -> Config msg file
 cancelUploadMsg msg (Config configRec) =
     Config <|
         { configRec | cancelUploadMsg = msg }
@@ -264,21 +243,6 @@ getReading (State { uploads }) =
             )
 
 
-
---readingFiles : State file -> List File.FileReadPortRequest
---
---
---files : State file -> List file -> List (UploadState file)
---files (State { uploads }) uploaded =
---    List.concat
---        [ List.map lifeCycleReading reading
---        , List.map lifeCycleSigning signing
---        , List.map lifeCycleUploading uploading
---        , List.map lifeCycleUploaded uploaded
---        ]
---
-
-
 fileName : Config msg file -> UploadState file -> String
 fileName (Config { nameFn }) file =
     case file of
@@ -293,10 +257,10 @@ thumbnailSrc : Config msg file -> UploadState file -> String
 thumbnailSrc (Config { thumbnailSrcFn, contentTypeFn }) file =
     case ( isImage contentTypeFn file, file ) of
         ( True, Uploading (UploadingFile _ (GettingSignedS3Url base64Encoded)) ) ->
-            base64Encoded
+            Base64Encoded.toString base64Encoded
 
         ( True, Uploading (UploadingFile _ (UploadingToS3 base64Encoded _ _ _)) ) ->
-            base64Encoded
+            Base64Encoded.toString base64Encoded
 
         ( True, Uploaded file ) ->
             thumbnailSrcFn file
@@ -370,39 +334,16 @@ dropActive isActive (State state) =
 --requests requestId =
 --    List.indexedMap (\i file -> UploadingFile (UploadId.update i requestId) file)
 --
---
---base64EncodeFiles : List Drag.File -> State file -> ( State file, Cmd msg )
---base64EncodeFiles files (State state) =
---    let
---        newRequests =
---            File.requests (UploadId.update 1 state.requestId) files
---
---        uploads =
---            files
---                |> List.indexedMap (,)
---                |> List.foldl
---                    (\acc ( index, file ) ->
---                        UploadId.insert (UploadId.update index state.requestId) file acc
---                    )
---                    state.uploads
---    in
---    ( State
---        { state
---            | update = state.reqading ++ newRequests
---            , requestId = UploadId.update (List.length reading) state.requestId
---        }
---    , readCmds newRequests
---    )
 
 
 base64EncodeFiles : List Drag.File -> State file -> ( State file, Cmd msg )
 base64EncodeFiles files (State state) =
     let
-        ( uploads, insertedIds ) =
+        ( updatedUploadCollection, insertedIds ) =
             files
                 |> List.indexedMap
                     (\i file ->
-                        ( UploadId.update i state.requestId
+                        ( UploadId.incrementIdBy i state.requestId
                         , UploadingFile file ReadingBase64
                         )
                     )
@@ -416,10 +357,10 @@ base64EncodeFiles files (State state) =
     in
     ( State
         { state
-            | uploads = uploads
-            , requestId = UploadId.update (List.length files) state.requestId
+            | uploads = updatedUploadCollection
+            , requestId = UploadId.incrementIdBy (List.length files) state.requestId
         }
-    , readCmds insertedIds uploads
+    , readCmds insertedIds updatedUploadCollection
     )
 
 
@@ -444,20 +385,28 @@ fileReadSuccess uploadId file (State state) =
         { state | uploads = UploadId.insert uploadId file state.uploads }
 
 
+fileUploadSuccess : UploadId -> State file -> ( State file, Maybe file )
+fileUploadSuccess requestId (State state) =
+    let
+        maybeFile =
+            state.uploads
+                |> UploadId.get requestId
+                |> Maybe.andThen
+                    (\file ->
+                        case file of
+                            UploadingFile _ (UploadingToS3 _ _ _ file) ->
+                                Just file
 
---
---
---fileUploadSuccess : UploadId -> State file -> ( State file, Maybe file )
---fileUploadSuccess requestId (State state) =
---    let
---        ( uploading, maybeBackendFile ) =
---            File.popUploadingRequest requestId state.uploading
---    in
---    ( State { state | uploading = uploading }
---    , maybeBackendFile
---    )
---
---
+                            _ ->
+                                Nothing
+                    )
+
+        uploads =
+            UploadId.remove requestId state.uploads
+    in
+    ( State { state | uploads = uploads }
+    , maybeFile
+    )
 
 
 uploadFileToSignedUrl : SignedUrl -> file -> UploadId -> State file -> ( State file, Cmd msg )
@@ -492,7 +441,11 @@ uploadCmds files =
             (\( id, uploadingFile ) ->
                 case uploadingFile of
                     UploadingFile _ (UploadingToS3 base64 signedUrl _ _) ->
-                        upload ( UploadId.encoder id, SignedUrl.toString signedUrl, base64 )
+                        upload
+                            ( UploadId.encoder id
+                            , SignedUrl.encoder signedUrl
+                            , Base64Encoded.encoder base64
+                            )
 
                     _ ->
                         Cmd.none
@@ -500,52 +453,39 @@ uploadCmds files =
         |> Cmd.batch
 
 
+updateS3UploadProgress : UploadId -> Float -> State file -> State file
+updateS3UploadProgress id progress (State state) =
+    State <|
+        { state
+            | uploads =
+                UploadId.update id
+                    (Maybe.map
+                        (\upload ->
+                            case upload of
+                                UploadingFile rawFile (UploadingToS3 base64 signedUrl _ backendFile) ->
+                                    UploadingFile rawFile (UploadingToS3 base64 signedUrl progress backendFile)
 
---
---
---updateS3UploadProgress : UploadId -> Float -> State file -> State file
---updateS3UploadProgress id progress (State state) =
---    State <|
---        { state | uploading = File.updateUploadProgress id progress state.uploading }
+                                _ ->
+                                    upload
+                        )
+                    )
+                    state.uploads
+        }
 
 
-cancelTrigger : Config msg file -> UploadState file -> msg
-cancelTrigger (Config { cancelUploadMsg }) file =
-    cancelUploadMsg file
+cancelTrigger : Config msg file -> UploadId -> msg
+cancelTrigger (Config { cancelUploadMsg }) uploadId =
+    cancelUploadMsg uploadId
+
+
+cancelUpload : UploadId -> State file -> ( State file, Cmd msg )
+cancelUpload uploadId (State state) =
+    ( State { state | uploads = UploadId.remove uploadId state.uploads }
+    , uploadCancelled (UploadId.encoder uploadId)
+    )
 
 
 
---
---cancelUpload : UploadState file -> State file -> ( State file, Cmd msg )
---cancelUpload file (State state) =
---    case file of
---        ReadingBase64 request ->
---            ( State { state | reading = File.removeReadRequest request state.reading }
---            , Cmd.none
---            )
---
---        GettingSignedS3Url response ->
---            ( State { state | signing = File.removeSigningRequest response state.signing }
---            , uploadCancelled (UploadId.encoder (File.idFromResponse response))
---            )
---
---        UploadingToS3 signed ->
---            ( State { state | uploading = File.removeUploadingRequest signed state.uploading }
---            , uploadCancelled (UploadId.encoder (File.idFromSigned signed))
---            )
---
---        _ ->
---            ( State state, Cmd.none )
---
---        UploadingToS3 request ->
---            { state
---                | uploading =
---                    List.filter
---                        (\(FileSigned (FileReadPortResponse (FileReadPortRequest id _) _) _ _ _) ->
---                            id /= requestId
---                        )
---                        state.uploading
---            }
 ---- VIEW ----
 
 
@@ -641,7 +581,7 @@ base64PortDecoder (State { uploads }) =
                 case UploadId.get requestId uploads of
                     Just (UploadingFile rawFile _) ->
                         Pipeline.decode GettingSignedS3Url
-                            |> Pipeline.required "result" Decode.string
+                            |> Pipeline.required "result" Base64Encoded.decoder
                             |> Decode.andThen (UploadingFile rawFile >> (,) requestId >> Decode.succeed)
 
                     _ ->

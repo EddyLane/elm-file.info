@@ -1,6 +1,5 @@
 module File.List exposing (view)
 
-import File.File as File
 import File.Upload as Upload
 import Html exposing (..)
 import Html.Attributes exposing (..)

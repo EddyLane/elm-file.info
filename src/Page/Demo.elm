@@ -1,7 +1,5 @@
 module Page.Demo exposing (Model, Msg, init, subscriptions, update, view)
 
---import File.File as File
-
 import Drag
 import File.List as FileList
 import File.SignedUrl as SignedUrl exposing (SignedUrl)
@@ -91,7 +89,7 @@ type Msg
     | GotSignedS3Url UploadId (Result Http.Error AttachmentResponse)
     | UploadedFile (Result String UploadId)
     | UploadProgress UploadId Float
-    | CancelUpload (Upload.UploadState Attachment)
+    | CancelUpload UploadId
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -144,47 +142,51 @@ update msg model =
             , Cmd.none
             )
 
-        --        GotSignedS3Url file (Ok { attachment, signedUrl }) ->
-        --            let
-        --                ( upload, uploadCmd ) =
-        --                    Upload.uploadFileToSignedUrl signedUrl attachment file model.upload
-        --            in
-        --            ( { model | upload = upload }
-        --            , uploadCmd
-        --            )
+        GotSignedS3Url file (Ok { attachment, signedUrl }) ->
+            let
+                ( upload, uploadCmd ) =
+                    Upload.uploadFileToSignedUrl signedUrl attachment file model.upload
+            in
+            ( { model | upload = upload }
+            , uploadCmd
+            )
+
         GotSignedS3Url _ (Err e) ->
             ( model
             , Cmd.none
             )
 
-        --        UploadProgress requestId progress ->
-        --            ( { model | upload = Upload.updateS3UploadProgress requestId progress model.upload }
-        --            , Cmd.none
-        --            )
-        --        CancelUpload file ->
-        --            let
-        --                ( upload, cancelCmd ) =
-        --                    Upload.cancelUpload file model.upload
-        --            in
-        --            ( { model | upload = upload }
-        --            , cancelCmd
-        --            )
-        --        UploadedFile (Ok requestId) ->
-        --            let
-        --                ( upload, maybeAttachment ) =
-        --                    Upload.fileUploadSuccess requestId model.upload
-        --
-        --                files =
-        --                    maybeAttachment
-        --                        |> Maybe.map (\attachment -> attachment :: model.files)
-        --                        |> Maybe.withDefault model.files
-        --            in
-        --            ( { model
-        --                | upload = upload
-        --                , files = files
-        --              }
-        --            , Cmd.none
-        --            )
+        UploadProgress requestId progress ->
+            ( { model | upload = Upload.updateS3UploadProgress requestId progress model.upload }
+            , Cmd.none
+            )
+
+        CancelUpload file ->
+            let
+                ( upload, cancelCmd ) =
+                    Upload.cancelUpload file model.upload
+            in
+            ( { model | upload = upload }
+            , cancelCmd
+            )
+
+        UploadedFile (Ok requestId) ->
+            let
+                ( upload, maybeAttachment ) =
+                    Upload.fileUploadSuccess requestId model.upload
+
+                files =
+                    maybeAttachment
+                        |> Maybe.map (\attachment -> attachment :: model.files)
+                        |> Maybe.withDefault model.files
+            in
+            ( { model
+                | upload = upload
+                , files = files
+              }
+            , Cmd.none
+            )
+
         UploadedFile (Err e) ->
             ( model
             , Cmd.none
@@ -224,7 +226,7 @@ uploadConfig =
         |> Upload.inputId "elm-file-example"
         |> Upload.nameFn .fileName
         |> Upload.contentTypeFn .contentType
-        |> Upload.thumbnailSrcFn (\attachment -> "http://localhost:3003/download/" ++ attachment.reference)
+        |> Upload.thumbnailSrcFn (.reference >> (++) "http://localhost:3003/download/")
 
 
 view : Model -> Html Msg

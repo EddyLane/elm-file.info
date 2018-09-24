@@ -1,4 +1,18 @@
-module File.UploadId exposing (Collection, UploadId, collection, decoder, encoder, get, init, insert, toList, update)
+module File.UploadId
+    exposing
+        ( Collection
+        , UploadId
+        , collection
+        , decoder
+        , encoder
+        , get
+        , incrementIdBy
+        , init
+        , insert
+        , remove
+        , toList
+        , update
+        )
 
 import Dict exposing (Dict)
 import Json.Decode as Decode exposing (Decoder)
@@ -12,13 +26,17 @@ type UploadId
     = UploadId Int
 
 
+type Collection file
+    = Collection (Dict Int file)
+
+
 init : UploadId
 init =
     UploadId 1
 
 
-type Collection file
-    = Collection (Dict Int file)
+
+---- COLLECTION ----
 
 
 collection : Collection file
@@ -55,12 +73,18 @@ toList (Collection collection) =
         |> List.map (Tuple.mapFirst UploadId)
 
 
+update : UploadId -> (Maybe file -> Maybe file) -> Collection file -> Collection file
+update (UploadId id) updateFn (Collection collection) =
+    Dict.update id updateFn collection
+        |> Collection
+
+
 
 ---- UPDATE -----
 
 
-update : Int -> UploadId -> UploadId
-update i (UploadId id) =
+incrementIdBy : Int -> UploadId -> UploadId
+incrementIdBy i (UploadId id) =
     UploadId (i + id)
 
 
