@@ -2,9 +2,9 @@ port module File.Upload
     exposing
         ( Config
         , State
-        , UploadState
         , UploadingFile
         , base64EncodeFiles
+        , base64EncodedData
         , base64PortDecoder
         , browseClick
         , browseFiles
@@ -12,7 +12,6 @@ port module File.Upload
         , cancelUpload
         , cancelUploadMsg
         , config
-        , contentTypeFn
         , drag
         , dropActive
         , fileContentRead
@@ -21,18 +20,17 @@ port module File.Upload
         , fileUploadSuccess
         , init
         , inputId
+        , isImage
         , maximumFileSize
-        , nameFn
         , onChangeFiles
         , signedUrlMetadataEncoder
-        , thumbnailSrc
-        , thumbnailSrcFn
         , updateS3UploadProgress
         , uploadCancelled
         , uploadFileToSignedUrl
         , uploadPercentage
         , uploadProgress
         , uploaded
+        , uploads
         , view
         )
 
@@ -76,11 +74,9 @@ port uploaded : (Encode.Value -> msg) -> Sub msg
 
 
 ---- STATE ----
-
-
-type UploadState file
-    = Uploading UploadId (UploadingFile file)
-    | Uploaded file
+--type UploadState file
+--    = Uploading UploadId (UploadingFile file)
+--    | Uploaded file
 
 
 type UploadingFile file
@@ -104,11 +100,11 @@ type alias StateRec file =
     }
 
 
-type Config msg file
-    = Config (ConfigRec msg file)
+type Config msg
+    = Config (ConfigRec msg)
 
 
-type alias ConfigRec msg file =
+type alias ConfigRec msg =
     { onChangeFilesMsg : String -> List Drag.File -> msg
     , softDeleteSelectedMsg : msg
     , browseClickMsg : String -> msg
@@ -118,18 +114,7 @@ type alias ConfigRec msg file =
     , dropMsg : Drag.Event -> msg
     , maximumFileSize : Int
     , inputId : String
-    , nameFn : file -> String
-    , contentTypeFn : file -> String
-    , thumbnailSrcFn : file -> String
     }
-
-
-combineUploadsWithFiles : State file -> List file -> List (UploadState file)
-combineUploadsWithFiles (State { uploads }) files =
-    List.concat
-        [ List.map (uncurry Uploading) <| UploadId.toList uploads
-        , List.map Uploaded files
-        ]
 
 
 base64Success : ( UploadId, String ) -> State file -> State file
@@ -146,7 +131,7 @@ init =
         }
 
 
-config : msg -> Config msg file
+config : msg -> Config msg
 config noOpMsg =
     Config <|
         { onChangeFilesMsg = always (always noOpMsg)
@@ -158,43 +143,40 @@ config noOpMsg =
         , dropMsg = always noOpMsg
         , maximumFileSize = 5000
         , inputId = "elm-file-upload-input"
-        , nameFn = always "-"
-        , contentTypeFn = always "-"
-        , thumbnailSrcFn = always ""
         }
 
 
-onChangeFiles : (String -> List Drag.File -> msg) -> Config msg file -> Config msg file
+onChangeFiles : (String -> List Drag.File -> msg) -> Config msg -> Config msg
 onChangeFiles msg (Config configRec) =
     Config <|
         { configRec | onChangeFilesMsg = msg }
 
 
-inputId : String -> Config msg file -> Config msg file
+inputId : String -> Config msg -> Config msg
 inputId inputId (Config configRec) =
     Config <|
         { configRec | inputId = inputId }
 
 
-softDelete : msg -> Config msg file -> Config msg file
+softDelete : msg -> Config msg -> Config msg
 softDelete msg (Config configRec) =
     Config <|
         { configRec | softDeleteSelectedMsg = msg }
 
 
-browseFiles : (String -> msg) -> Config msg file -> Config msg file
+browseFiles : (String -> msg) -> Config msg -> Config msg
 browseFiles msg (Config configRec) =
     Config <|
         { configRec | browseClickMsg = msg }
 
 
-cancelUploadMsg : (UploadId -> msg) -> Config msg file -> Config msg file
+cancelUploadMsg : (UploadId -> msg) -> Config msg -> Config msg
 cancelUploadMsg msg (Config configRec) =
     Config <|
         { configRec | cancelUploadMsg = msg }
 
 
-drag : (Drag.Event -> msg) -> (Drag.Event -> msg) -> (Drag.Event -> msg) -> Config msg file -> Config msg file
+drag : (Drag.Event -> msg) -> (Drag.Event -> msg) -> (Drag.Event -> msg) -> Config msg -> Config msg
 drag over leave drop (Config configRec) =
     Config <|
         { configRec
@@ -204,25 +186,7 @@ drag over leave drop (Config configRec) =
         }
 
 
-nameFn : (file -> String) -> Config msg file -> Config msg file
-nameFn fn (Config configRec) =
-    Config <|
-        { configRec | nameFn = fn }
-
-
-contentTypeFn : (file -> String) -> Config msg file -> Config msg file
-contentTypeFn fn (Config configRec) =
-    Config <|
-        { configRec | contentTypeFn = fn }
-
-
-thumbnailSrcFn : (file -> String) -> Config msg file -> Config msg file
-thumbnailSrcFn fn (Config configRec) =
-    Config <|
-        { configRec | thumbnailSrcFn = fn }
-
-
-maximumFileSize : Int -> Config msg file -> Config msg file
+maximumFileSize : Int -> Config msg -> Config msg
 maximumFileSize size (Config configRec) =
     Config <|
         { configRec | maximumFileSize = size }
@@ -244,53 +208,42 @@ maximumFileSize size (Config configRec) =
 --            )
 
 
-fileName : Config msg file -> UploadState file -> String
-fileName (Config { nameFn }) file =
-    case file of
-        Uploading _ (UploadingFile rawFile _) ->
-            .name rawFile
-
-        Uploaded uploaded ->
-            nameFn uploaded
+uploads : State file -> UploadId.Collection (UploadingFile file)
+uploads (State { uploads }) =
+    uploads
 
 
-thumbnailSrc : Config msg file -> UploadState file -> String
-thumbnailSrc (Config { thumbnailSrcFn, contentTypeFn }) file =
-    case ( isImage contentTypeFn file, file ) of
-        ( True, Uploading _ (UploadingFile _ (GettingSignedS3Url base64Encoded)) ) ->
-            Base64Encoded.toString base64Encoded
-
-        ( True, Uploading _ (UploadingFile _ (UploadingToS3 base64Encoded _ _ _)) ) ->
-            Base64Encoded.toString base64Encoded
-
-        ( True, Uploaded file ) ->
-            thumbnailSrcFn file
-
-        _ ->
-            ""
+fileName : UploadingFile file -> String
+fileName (UploadingFile { name } _) =
+    name
 
 
-uploadPercentage : UploadState file -> Float
+isImage : UploadingFile file -> Bool
+isImage (UploadingFile { typeMIME } _) =
+    String.startsWith "image" typeMIME
+
+
+uploadPercentage : UploadingFile file -> Float
 uploadPercentage file =
     case file of
-        Uploading _ (UploadingFile _ (UploadingToS3 _ _ percentage _)) ->
+        UploadingFile _ (UploadingToS3 _ _ percentage _) ->
             percentage
-
-        Uploaded _ ->
-            100.0
 
         _ ->
             0.0
 
 
-isImage : (file -> String) -> UploadState file -> Bool
-isImage contentTypeFn file =
-    case file of
-        Uploading _ (UploadingFile { typeMIME } _) ->
-            String.startsWith "image" typeMIME
+base64EncodedData : UploadingFile file -> Maybe Base64Encoded
+base64EncodedData (UploadingFile file status) =
+    case status of
+        ReadingBase64 ->
+            Nothing
 
-        Uploaded backendFile ->
-            String.startsWith "image" (contentTypeFn backendFile)
+        GettingSignedS3Url base64Encoded ->
+            Just base64Encoded
+
+        UploadingToS3 base64Encoded _ _ _ ->
+            Just base64Encoded
 
 
 
@@ -472,7 +425,7 @@ updateS3UploadProgress id progress (State state) =
         }
 
 
-cancelTrigger : Config msg file -> UploadId -> msg
+cancelTrigger : Config msg -> UploadId -> msg
 cancelTrigger (Config { cancelUploadMsg }) uploadId =
     cancelUploadMsg uploadId
 
@@ -488,7 +441,7 @@ cancelUpload uploadId (State state) =
 ---- VIEW ----
 
 
-view : State file -> Config msg file -> Html msg
+view : State file -> Config msg -> Html msg
 view (State state) (Config config) =
     div []
         [ dropZone state config
@@ -496,7 +449,7 @@ view (State state) (Config config) =
         ]
 
 
-dropZone : StateRec file -> ConfigRec msg file -> Html msg
+dropZone : StateRec file -> ConfigRec msg -> Html msg
 dropZone state config =
     div
         [ style
@@ -534,7 +487,7 @@ dropZone state config =
         ]
 
 
-fileInput : ConfigRec msg file -> Html msg
+fileInput : ConfigRec msg -> Html msg
 fileInput { inputId, onChangeFilesMsg } =
     input
         [ style [ ( "display", "none" ) ]

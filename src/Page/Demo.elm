@@ -215,7 +215,7 @@ getSignedUrl file =
 ---- VIEW ----
 
 
-uploadConfig : Upload.Config Msg Attachment
+uploadConfig : Upload.Config Msg
 uploadConfig =
     Upload.config NoOp
         |> Upload.maximumFileSize 500
@@ -224,9 +224,14 @@ uploadConfig =
         |> Upload.drag DragFilesOver DragFilesLeave DropFiles
         |> Upload.cancelUploadMsg CancelUpload
         |> Upload.inputId "elm-file-example"
-        |> Upload.nameFn .fileName
-        |> Upload.contentTypeFn .contentType
-        |> Upload.thumbnailSrcFn (.reference >> (++) "http://localhost:3003/download/")
+
+
+fileListConfig : FileList.Config Attachment
+fileListConfig =
+    FileList.config
+        |> FileList.nameFn .fileName
+        |> FileList.contentTypeFn .contentType
+        |> FileList.thumbnailSrcFn (.reference >> (++) "http://localhost:3003/download/")
 
 
 view : Model -> Html Msg
@@ -239,7 +244,7 @@ view { upload, files } =
         ]
         [ Upload.view upload uploadConfig
         , hr [] []
-        , FileList.view uploadConfig upload files
+        , FileList.view fileListConfig upload files
         ]
 
 
