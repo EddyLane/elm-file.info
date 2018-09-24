@@ -56,7 +56,10 @@ type SortableColumn
 
 
 type alias Column file msg =
-    ( String, file -> Html msg, file -> file -> Order )
+    { label : String
+    , html : file -> Html msg
+    , sorter : file -> file -> Order
+    }
 
 
 init : State
@@ -110,13 +113,13 @@ cancelUploadMsg msg (Config configRec) =
         { configRec | cancelUploadMsg = msg }
 
 
-columns : List ( String, file -> Html msg, file -> file -> Order ) -> Config file msg -> Config file msg
+columns : List (Column file msg) -> Config file msg -> Config file msg
 columns columns (Config configRec) =
     Config <|
         { configRec | columns = columns }
 
 
-column : ( String, file -> Html msg, file -> file -> Order ) -> Config file msg -> Config file msg
+column : Column file msg -> Config file msg -> Config file msg
 column col (Config configRec) =
     Config <|
         { configRec | columns = col :: configRec.columns }
@@ -153,13 +156,13 @@ sortResults config (State sortDir sortCol) =
 sortByCustom : String -> Config file msg -> SortDirection -> UploadState file -> UploadState file -> Order
 sortByCustom headerName ((Config { columns }) as config) sortDir a b =
     columns
-        |> List.filter (\( colName, _, _ ) -> colName == headerName)
+        |> List.filter (\{ label } -> label == headerName)
         |> List.head
         |> Maybe.map
-            (\( _, _, sortFn ) ->
+            (\{ sorter } ->
                 case sortDirPair sortDir a b of
                     ( Uploaded a, Uploaded b ) ->
-                        sortFn a b
+                        sorter a b
 
                     ( Uploading _ a, Uploaded b ) ->
                         Basics.compare 1 2
@@ -216,8 +219,8 @@ viewTableHeader state ((Config { columns, setListStateMsg }) as config) =
 viewUserDefinedThs : State -> Config file msg -> List (Html msg)
 viewUserDefinedThs state (Config { columns, setListStateMsg }) =
     List.map
-        (\( col, _, _ ) ->
-            th [ onClick <| setListStateMsg <| viewListSorterState (Custom col) state ] [ text col ]
+        (\{ label } ->
+            th [ onClick <| setListStateMsg <| viewListSorterState (Custom label) state ] [ text label ]
         )
         columns
 
@@ -297,8 +300,8 @@ viewUploadedRow ((Config { nameFn, thumbnailSrcFn, columns }) as config) file =
 viewUserDefinedTds : file -> List (Column file msg) -> List (Html msg)
 viewUserDefinedTds file =
     List.map
-        (\( _, colfn, _ ) ->
-            td [] [ colfn file ]
+        (\{ html } ->
+            td [] [ html file ]
         )
 
 

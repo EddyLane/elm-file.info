@@ -252,17 +252,15 @@ fileListConfig =
         |> FileList.cancelUploadMsg CancelUpload
         |> FileList.setListStateMsg SetListState
         |> FileList.column
-            ( "Uploaded by"
-            , .uploadedBy >> text
-            , \a b -> compare a.uploadedBy b.uploadedBy
-            )
+            { label = "Uploaded by"
+            , html = .uploadedBy >> text
+            , sorter = \a b -> compare a.uploadedBy b.uploadedBy
+            }
         |> FileList.column
-            ( "Uploaded at"
-            , .uploadedAt
-                >> Date.Extra.toFormattedString "d MMM YYY HH:mm"
-                >> text
-            , \a b -> Date.Extra.compare a.uploadedAt b.uploadedAt
-            )
+            { label = "Uploaded at"
+            , html = .uploadedAt >> Date.Extra.toFormattedString "d MMM YYY HH:mm" >> text
+            , sorter = \a b -> Date.Extra.compare a.uploadedAt b.uploadedAt
+            }
 
 
 view : Model -> Html Msg
