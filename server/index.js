@@ -21,7 +21,7 @@ if (!config.accessKeyId || !config.secretAccessKey) {
     return;
 }
 
-
+let fileId = 1;
 let files = {};
 
 AWS.config.update({
@@ -38,6 +38,7 @@ app.post('/signed-upload-url', ({body: {contentType, fileName}}, res) => {
     console.log(`Request received (${reference})`);
     console.log(`contentType (${reference})`, contentType);
     console.log(`fileName (${reference})`, fileName);
+
     const s3Params = {
         Bucket: config.bucket,
         Key: reference,
@@ -45,12 +46,15 @@ app.post('/signed-upload-url', ({body: {contentType, fileName}}, res) => {
     };
 
     const attachment = {
+        id: fileId,
         reference,
         uploadedBy: "Test User",
         fileName,
         contentType,
         date: new Date
     };
+
+    fileId++;
 
     files[reference] = attachment;
 
@@ -89,7 +93,13 @@ app.get('/download/:reference', ({params: {reference}}, res) => {
     };
 
     res.attachment(file.fileName);
-    S3.getObject(s3Params).createReadStream().pipe(res);
+    try {
+        S3.getObject(s3Params).createReadStream().pipe(res);
+    }
+    catch (err) {
+        res.setStatus(404).send();
+    }
+
 
 });
 

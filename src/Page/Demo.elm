@@ -32,14 +32,14 @@ getAttachmentsUrl =
 
 type alias Model =
     { upload : Upload.State Attachment
-    , list : FileList.State
+    , list : FileList.State ColumnId
     , files : List Attachment
     }
 
 
 init : Task Http.Error Model
 init =
-    Task.map (Model Upload.init FileList.init) loadAttachments
+    Task.map (Model Upload.init (FileList.init fileListConfig)) loadAttachments
 
 
 loadAttachments : Task Http.Error (List Attachment)
@@ -63,6 +63,7 @@ type alias AttachmentResponse =
 
 type alias Attachment =
     { uploadedAt : Date
+    , id : Int
     , reference : String
     , contentType : String
     , fileName : String
@@ -78,6 +79,7 @@ attachmentDecoder =
                 case Date.fromString uploadedAt of
                     Ok date ->
                         Pipeline.decode (Attachment date)
+                            |> Pipeline.required "id" Decode.int
                             |> Pipeline.required "reference" Decode.string
                             |> Pipeline.required "contentType" Decode.string
                             |> Pipeline.required "fileName" Decode.string
@@ -104,7 +106,7 @@ type Msg
     | UploadedFile (Result String UploadId)
     | UploadProgress UploadId Float
     | CancelUpload UploadId
-    | SetListState FileList.State
+    | SetListState (FileList.State ColumnId)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -207,8 +209,8 @@ update msg model =
             , Cmd.none
             )
 
-        SetListState state ->
-            ( { model | list = state }
+        SetListState list ->
+            ( { model | list = list }
             , Cmd.none
             )
 
@@ -243,7 +245,12 @@ uploadConfig =
         |> Upload.inputId "elm-file-example"
 
 
-fileListConfig : FileList.Config Attachment Msg
+type ColumnId
+    = UploadedOn
+    | UploadedBy
+
+
+fileListConfig : FileList.Config ColumnId Attachment Msg
 fileListConfig =
     FileList.config NoOp
         |> FileList.nameFn .fileName
@@ -251,15 +258,18 @@ fileListConfig =
         |> FileList.thumbnailSrcFn (.reference >> (++) "http://localhost:3003/download/")
         |> FileList.cancelUploadMsg CancelUpload
         |> FileList.setListStateMsg SetListState
+        |> FileList.defaultSort (FileList.SortByCustom UploadedOn)
         |> FileList.column
-            { label = "Uploaded by"
-            , html = .uploadedBy >> text
-            , sorter = \a b -> compare a.uploadedBy b.uploadedBy
-            }
-        |> FileList.column
-            { label = "Uploaded at"
+            { id = UploadedOn
+            , label = "Uploaded on"
             , html = .uploadedAt >> Date.Extra.toFormattedString "d MMM YYY HH:mm" >> text
             , sorter = \a b -> Date.Extra.compare a.uploadedAt b.uploadedAt
+            }
+        |> FileList.column
+            { id = UploadedBy
+            , label = "Uploaded by"
+            , html = .uploadedBy >> text
+            , sorter = \a b -> compare a.uploadedBy b.uploadedBy
             }
 
 
