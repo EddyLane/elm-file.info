@@ -19,7 +19,6 @@ port module File.Upload
         , fileName
         , fileReadSuccess
         , fileUploadSuccess
-        , getReading
         , init
         , inputId
         , maximumFileSize
@@ -80,7 +79,7 @@ port uploaded : (Encode.Value -> msg) -> Sub msg
 
 
 type UploadState file
-    = Uploading (UploadingFile file)
+    = Uploading UploadId (UploadingFile file)
     | Uploaded file
 
 
@@ -101,7 +100,6 @@ type State file
 type alias StateRec file =
     { dropActive : Bool
     , selectAllToggled : Bool
-    , requestId : UploadId
     , uploads : UploadId.Collection (UploadingFile file)
     }
 
@@ -126,14 +124,17 @@ type alias ConfigRec msg file =
     }
 
 
+combineUploadsWithFiles : State file -> List file -> List (UploadState file)
+combineUploadsWithFiles (State { uploads }) files =
+    List.concat
+        [ List.map (uncurry Uploading) <| UploadId.toList uploads
+        , List.map Uploaded files
+        ]
+
+
 base64Success : ( UploadId, String ) -> State file -> State file
 base64Success ( uploadId, base64 ) (State state) =
     State state
-
-
-lifeCycleUploaded : file -> UploadState file
-lifeCycleUploaded =
-    Uploaded
 
 
 init : State file
@@ -141,8 +142,7 @@ init =
     State <|
         { dropActive = False
         , selectAllToggled = False
-        , requestId = UploadId.init
-        , uploads = UploadId.collection
+        , uploads = UploadId.init
         }
 
 
@@ -228,25 +228,26 @@ maximumFileSize size (Config configRec) =
         { configRec | maximumFileSize = size }
 
 
-getReading : State file -> List ( UploadId, Drag.File )
-getReading (State { uploads }) =
-    uploads
-        |> UploadId.toList
-        |> List.filterMap
-            (\upload ->
-                case upload of
-                    ( uploadId, UploadingFile dragFile ReadingBase64 ) ->
-                        Just ( uploadId, dragFile )
 
-                    _ ->
-                        Nothing
-            )
+--getReading : State file -> List ( UploadId, Drag.File )
+--getReading (State { uploads }) =
+--    uploads
+--        |> UploadId.toList
+--        |> List.filterMap
+--            (\upload ->
+--                case upload of
+--                    ( uploadId, UploadingFile dragFile ReadingBase64 ) ->
+--                        Just ( uploadId, dragFile )
+--
+--                    _ ->
+--                        Nothing
+--            )
 
 
 fileName : Config msg file -> UploadState file -> String
 fileName (Config { nameFn }) file =
     case file of
-        Uploading (UploadingFile rawFile _) ->
+        Uploading _ (UploadingFile rawFile _) ->
             .name rawFile
 
         Uploaded uploaded ->
@@ -256,10 +257,10 @@ fileName (Config { nameFn }) file =
 thumbnailSrc : Config msg file -> UploadState file -> String
 thumbnailSrc (Config { thumbnailSrcFn, contentTypeFn }) file =
     case ( isImage contentTypeFn file, file ) of
-        ( True, Uploading (UploadingFile _ (GettingSignedS3Url base64Encoded)) ) ->
+        ( True, Uploading _ (UploadingFile _ (GettingSignedS3Url base64Encoded)) ) ->
             Base64Encoded.toString base64Encoded
 
-        ( True, Uploading (UploadingFile _ (UploadingToS3 base64Encoded _ _ _)) ) ->
+        ( True, Uploading _ (UploadingFile _ (UploadingToS3 base64Encoded _ _ _)) ) ->
             Base64Encoded.toString base64Encoded
 
         ( True, Uploaded file ) ->
@@ -272,7 +273,7 @@ thumbnailSrc (Config { thumbnailSrcFn, contentTypeFn }) file =
 uploadPercentage : UploadState file -> Float
 uploadPercentage file =
     case file of
-        Uploading (UploadingFile _ (UploadingToS3 _ _ percentage _)) ->
+        Uploading _ (UploadingFile _ (UploadingToS3 _ _ percentage _)) ->
             percentage
 
         Uploaded _ ->
@@ -285,7 +286,7 @@ uploadPercentage file =
 isImage : (file -> String) -> UploadState file -> Bool
 isImage contentTypeFn file =
     case file of
-        Uploading (UploadingFile { typeMIME } _) ->
+        Uploading _ (UploadingFile { typeMIME } _) ->
             String.startsWith "image" typeMIME
 
         Uploaded backendFile ->
@@ -341,15 +342,14 @@ base64EncodeFiles files (State state) =
     let
         ( updatedUploadCollection, insertedIds ) =
             files
-                |> List.indexedMap
-                    (\i file ->
-                        ( UploadId.incrementIdBy i state.requestId
-                        , UploadingFile file ReadingBase64
-                        )
-                    )
+                |> List.map (\file -> UploadingFile file ReadingBase64)
                 |> List.foldl
-                    (\( id, file ) ( collection, insertedId ) ->
-                        ( UploadId.insert id file collection
+                    (\file ( uploadsCollection, insertedIds ) ->
+                        let
+                            ( id, collection ) =
+                                UploadId.insert file uploadsCollection
+                        in
+                        ( collection
                         , id :: insertedIds
                         )
                     )
@@ -358,7 +358,6 @@ base64EncodeFiles files (State state) =
     ( State
         { state
             | uploads = updatedUploadCollection
-            , requestId = UploadId.incrementIdBy (List.length files) state.requestId
         }
     , readCmds insertedIds updatedUploadCollection
     )
@@ -382,7 +381,7 @@ readCmds uploadIds collection =
 fileReadSuccess : UploadId -> UploadingFile file -> State file -> State file
 fileReadSuccess uploadId file (State state) =
     State <|
-        { state | uploads = UploadId.insert uploadId file state.uploads }
+        { state | uploads = UploadId.update uploadId (always (Just file)) state.uploads }
 
 
 fileUploadSuccess : UploadId -> State file -> ( State file, Maybe file )
@@ -419,7 +418,7 @@ uploadFileToSignedUrl signedUrl backendFile uploadId (State state) =
                         uploadingFile =
                             UploadingFile rawFile (UploadingToS3 base64 signedUrl 0.0 backendFile)
                     in
-                    ( UploadId.insert uploadId uploadingFile state.uploads
+                    ( UploadId.update uploadId (always (Just uploadingFile)) state.uploads
                     , uploadCmds [ ( uploadId, uploadingFile ) ]
                     )
 

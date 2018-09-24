@@ -1,4 +1,4 @@
-module File.SignedUrl exposing (SignedUrl, decoder, encoder, toString)
+module File.SignedUrl exposing (SignedUrl, decoder, encoder)
 
 import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
@@ -26,8 +26,3 @@ decoder =
 encoder : SignedUrl -> Encode.Value
 encoder (SignedUrl { signedUrl }) =
     Encode.string signedUrl
-
-
-toString : SignedUrl -> String
-toString (SignedUrl { signedUrl }) =
-    signedUrl
