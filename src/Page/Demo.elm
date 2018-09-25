@@ -253,12 +253,14 @@ type ColumnId
 fileListConfig : FileList.Config ColumnId Attachment Msg
 fileListConfig =
     FileList.config NoOp
+        |> FileList.idFn .reference
         |> FileList.nameFn .fileName
         |> FileList.contentTypeFn .contentType
         |> FileList.thumbnailSrcFn (.reference >> (++) "http://localhost:3003/download/")
         |> FileList.cancelUploadMsg CancelUpload
         |> FileList.setListStateMsg SetListState
         |> FileList.defaultSort (FileList.SortByCustom UploadedOn)
+        |> FileList.defaultSortDirection FileList.Desc
         |> FileList.column
             { id = UploadedOn
             , label = "Uploaded on"

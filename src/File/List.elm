@@ -2,6 +2,7 @@ module File.List
     exposing
         ( Config
         , Sort(..)
+        , SortDirection(..)
         , State
         , cancelUploadMsg
         , column
@@ -9,6 +10,8 @@ module File.List
         , config
         , contentTypeFn
         , defaultSort
+        , defaultSortDirection
+        , idFn
         , init
         , nameFn
         , setListStateMsg
@@ -22,6 +25,7 @@ import File.UploadId as UploadId exposing (Collection, UploadId)
 import Html exposing (..)
 import Html.Attributes as Attributes exposing (..)
 import Html.Events exposing (onClick)
+import Set exposing (Set)
 
 
 type UploadState file
@@ -29,28 +33,31 @@ type UploadState file
     | Uploaded file
 
 
-type Config columnId file msg
-    = Config (ConfigRec columnId file msg)
+type Config colId file msg
+    = Config (ConfigRec colId file msg)
 
 
-type alias ConfigRec columnId file msg =
-    { nameFn : file -> String
+type alias ConfigRec colId file msg =
+    { idFn : file -> String
+    , nameFn : file -> String
     , contentTypeFn : file -> String
     , thumbnailSrcFn : file -> String
     , cancelUploadMsg : UploadId -> msg
-    , columns : List (Column columnId file msg)
-    , setListStateMsg : State columnId -> msg
-    , defaultCustomSort : Maybe (Sort columnId)
+    , columns : List (Column colId file msg)
+    , setListStateMsg : State colId -> msg
+    , defaultCustomSort : Maybe (Sort colId)
+    , defaultSortDir : SortDirection
     }
 
 
 type State id
-    = State SortDirection (Sort id)
+    = State (StateRec id)
 
 
-type alias StateRec =
+type alias StateRec id =
     { direction : SortDirection
-    , column : Sort
+    , sortColumn : Sort id
+    , selectedIds : Set String
     }
 
 
@@ -72,76 +79,95 @@ type alias Column id file msg =
     }
 
 
-init : Config columnId file msg -> State columnId
-init (Config { defaultCustomSort }) =
-    case defaultCustomSort of
-        Just column ->
-            State Desc column
+init : Config colId file msg -> State colId
+init (Config { defaultCustomSort, defaultSortDir }) =
+    State <|
+        { direction = defaultSortDir
+        , sortColumn = Maybe.withDefault SortByFilename defaultCustomSort
+        , selectedIds = Set.empty
+        }
 
-        Nothing ->
-            State Desc SortByFilename
 
-
-defaultSort : Sort columnId -> Config columnId file msg -> Config columnId file msg
+defaultSort : Sort colId -> Config colId file msg -> Config colId file msg
 defaultSort sort (Config configRec) =
     Config <|
         { configRec | defaultCustomSort = Just sort }
+
+
+defaultSortDirection : SortDirection -> Config colId file msg -> Config colId file msg
+defaultSortDirection sortDir (Config configRec) =
+    Config <|
+        { configRec | defaultSortDir = sortDir }
 
 
 
 ---- CONFIG ----
 
 
-config : msg -> Config columnId file msg
+config : msg -> Config colId file msg
 config noOpMsg =
     Config <|
-        { nameFn = always "-"
+        { idFn = always "-"
+        , nameFn = always "-"
         , contentTypeFn = always "-"
         , cancelUploadMsg = always noOpMsg
         , thumbnailSrcFn = always ""
         , columns = []
         , setListStateMsg = always noOpMsg
         , defaultCustomSort = Nothing
+        , defaultSortDir = Asc
         }
 
 
-setListStateMsg : (State columnId -> msg) -> Config columnId file msg -> Config columnId file msg
+setListStateMsg : (State colId -> msg) -> Config colId file msg -> Config colId file msg
 setListStateMsg msg (Config configRec) =
     Config <|
         { configRec | setListStateMsg = msg }
 
 
-nameFn : (file -> String) -> Config columnId file msg -> Config columnId file msg
+defaultDirection : (State colId -> msg) -> Config colId file msg -> Config colId file msg
+defaultDirection msg (Config configRec) =
+    Config <|
+        { configRec | setListStateMsg = msg }
+
+
+idFn : (file -> String) -> Config colId file msg -> Config colId file msg
+idFn fn (Config configRec) =
+    Config <|
+        { configRec | idFn = fn }
+
+
+nameFn : (file -> String) -> Config colId file msg -> Config colId file msg
 nameFn fn (Config configRec) =
     Config <|
         { configRec | nameFn = fn }
 
 
-contentTypeFn : (file -> String) -> Config columnId file msg -> Config columnId file msg
+contentTypeFn : (file -> String) -> Config colId file msg -> Config colId file msg
 contentTypeFn fn (Config configRec) =
     Config <|
         { configRec | contentTypeFn = fn }
 
 
-thumbnailSrcFn : (file -> String) -> Config columnId file msg -> Config columnId file msg
+thumbnailSrcFn : (file -> String) -> Config colId file msg -> Config colId file msg
 thumbnailSrcFn fn (Config configRec) =
     Config <|
         { configRec | thumbnailSrcFn = fn }
 
 
-cancelUploadMsg : (UploadId -> msg) -> Config columnId file msg -> Config columnId file msg
+cancelUploadMsg : (UploadId -> msg) -> Config colId file msg -> Config colId file msg
 cancelUploadMsg msg (Config configRec) =
     Config <|
         { configRec | cancelUploadMsg = msg }
 
 
-columns : List (Column columnId file msg) -> Config columnId file msg -> Config columnId file msg
+columns : List (Column colId file msg) -> Config colId file msg -> Config colId file msg
 columns columns (Config configRec) =
     Config <|
         { configRec | columns = columns }
 
 
-column : Column columnId file msg -> Config columnId file msg -> Config columnId file msg
+column : Column colId file msg -> Config colId file msg -> Config colId file msg
 column col (Config configRec) =
     Config <|
         { configRec | columns = col :: configRec.columns }
@@ -151,8 +177,8 @@ column col (Config configRec) =
 ---- VIEW ----
 
 
-view : State columnId -> Config columnId file msg -> Upload.State file -> List file -> Html msg
-view ((State sortDir sortCol) as state) config upload files =
+view : State colId -> Config colId file msg -> Upload.State file -> List file -> Html msg
+view ((State { direction, sortColumn }) as state) config upload files =
     table []
         [ viewTableHeader state config
         , tbody []
@@ -160,25 +186,25 @@ view ((State sortDir sortCol) as state) config upload files =
                 |> Upload.uploads
                 |> combineUploadsWithFiles files
                 |> sortResults config state
-                |> List.map (viewRow config)
+                |> List.map (viewRow config state)
             )
         ]
 
 
-sortResults : Config columnId file msg -> State columnId -> List (UploadState file) -> List (UploadState file)
-sortResults config (State sortDir sortCol) =
-    case sortCol of
+sortResults : Config colId file msg -> State colId -> List (UploadState file) -> List (UploadState file)
+sortResults config (State { direction, sortColumn }) =
+    case sortColumn of
         SortByFilename ->
-            List.sortWith (sortByFilename config sortDir)
+            List.sortWith (sortByFilename config direction)
 
         SortByCustom headerName ->
-            List.sortWith (sortByCustom headerName config sortDir)
+            List.sortWith (sortByCustom headerName config direction)
 
 
-sortByCustom : columnId -> Config columnId file msg -> SortDirection -> UploadState file -> UploadState file -> Order
-sortByCustom columnId ((Config { columns }) as config) sortDir a b =
+sortByCustom : colId -> Config colId file msg -> SortDirection -> UploadState file -> UploadState file -> Order
+sortByCustom colId ((Config { columns }) as config) sortDir a b =
     columns
-        |> List.filter (\{ id } -> id == columnId)
+        |> List.filter (\{ id } -> id == colId)
         |> List.head
         |> Maybe.map
             (\{ sorter } ->
@@ -198,14 +224,14 @@ sortByCustom columnId ((Config { columns }) as config) sortDir a b =
         |> Maybe.withDefault (sortByFilename config sortDir a b)
 
 
-sortByFilename : Config columnId file msg -> SortDirection -> UploadState file -> UploadState file -> Order
+sortByFilename : Config colId file msg -> SortDirection -> UploadState file -> UploadState file -> Order
 sortByFilename config sortDir a b =
     case sortDirPair sortDir a b of
         ( a, b ) ->
             Basics.compare (filename config a) (filename config b)
 
 
-filename : Config columnId file msg -> UploadState file -> String
+filename : Config colId file msg -> UploadState file -> String
 filename (Config { nameFn }) file =
     case file of
         Uploaded file ->
@@ -223,8 +249,8 @@ sortDirPair sortDir a b =
         ( b, a )
 
 
-viewTableHeader : State columnId -> Config columnId file msg -> Html msg
-viewTableHeader ((State direction column) as state) ((Config { columns, setListStateMsg }) as config) =
+viewTableHeader : State colId -> Config colId file msg -> Html msg
+viewTableHeader ((State { direction, sortColumn }) as state) ((Config { columns, setListStateMsg }) as config) =
     thead []
         [ tr []
             (List.concat
@@ -235,7 +261,7 @@ viewTableHeader ((State direction column) as state) ((Config { columns, setListS
                         , onClick (setListStateMsg (viewListSorterState SortByFilename state))
                         ]
                         [ text "File"
-                        , if column == SortByFilename then
+                        , if sortColumn == SortByFilename then
                             viewActiveSortArrow direction
                           else
                             text ""
@@ -248,12 +274,12 @@ viewTableHeader ((State direction column) as state) ((Config { columns, setListS
         ]
 
 
-viewCustomSortArrow : columnId -> State columnId -> Html msg
-viewCustomSortArrow columnId (State sortDir sortCol) =
-    case sortCol of
+viewCustomSortArrow : colId -> State colId -> Html msg
+viewCustomSortArrow colId (State { direction, sortColumn }) =
+    case sortColumn of
         SortByCustom id ->
-            if id == columnId then
-                viewActiveSortArrow sortDir
+            if id == colId then
+                viewActiveSortArrow direction
             else
                 text ""
 
@@ -269,7 +295,7 @@ viewActiveSortArrow dir =
         text "↓"
 
 
-viewUserDefinedThs : State columnId -> Config columnId file msg -> List (Html msg)
+viewUserDefinedThs : State colId -> Config colId file msg -> List (Html msg)
 viewUserDefinedThs state (Config { columns, setListStateMsg }) =
     List.map
         (\{ label, id } ->
@@ -286,12 +312,20 @@ viewUserDefinedThs state (Config { columns, setListStateMsg }) =
         columns
 
 
-viewListSorterState : Sort columnId -> State columnId -> State columnId
-viewListSorterState column (State direction col) =
-    if direction == Asc && column == col then
-        State Desc column
+viewListSorterState : Sort colId -> State colId -> State colId
+viewListSorterState column (State state) =
+    if state.direction == Asc && state.sortColumn == column then
+        State <|
+            { state
+                | direction = Desc
+                , sortColumn = state.sortColumn
+            }
     else
-        State Asc column
+        State <|
+            { state
+                | direction = Asc
+                , sortColumn = state.sortColumn
+            }
 
 
 combineUploadsWithFiles : List file -> UploadId.Collection (Upload.UploadingFile file) -> List (UploadState file)
@@ -302,17 +336,17 @@ combineUploadsWithFiles files uploads =
         ]
 
 
-viewRow : Config columnId file msg -> UploadState file -> Html msg
-viewRow config file =
+viewRow : Config colId file msg -> State colId -> UploadState file -> Html msg
+viewRow ((Config { idFn }) as config) state file =
     case file of
         Uploading uploadId uploadingFile ->
             viewUploadingRow config uploadId uploadingFile
 
         Uploaded file ->
-            viewUploadedRow config file
+            viewUploadedRow config state file
 
 
-viewUploadingRow : Config columnId file msg -> UploadId -> UploadingFile file -> Html msg
+viewUploadingRow : Config colId file msg -> UploadId -> UploadingFile file -> Html msg
 viewUploadingRow (Config { cancelUploadMsg, columns }) uploadId file =
     tr []
         [ td [] []
@@ -344,18 +378,41 @@ viewUploadingThumbnail file =
         []
 
 
-viewUploadedRow : Config columnId file msg -> file -> Html msg
-viewUploadedRow ((Config { nameFn, thumbnailSrcFn, columns }) as config) file =
+viewUploadedRow : Config colId file msg -> State colId -> file -> Html msg
+viewUploadedRow ((Config configRec) as config) ((State { selectedIds }) as state) file =
     tr []
         (List.concat
-            [ [ td [] [ input [ type_ "checkbox" ] [] ]
+            [ [ td []
+                    [ input
+                        [ type_ "checkbox"
+                        , checked (Set.member (configRec.idFn file) selectedIds)
+                        , onClick (configRec.setListStateMsg <| toggleFile config file state)
+                        ]
+                        []
+                    ]
               , td [] [ viewUploadedThumbnail config file ]
-              , td [] [ text (nameFn file) ]
+              , td [] [ text (configRec.nameFn file) ]
               ]
-            , viewUserDefinedTds file columns
+            , viewUserDefinedTds file configRec.columns
             , [ td [] [] ]
             ]
         )
+
+
+toggleFile : Config colId file msg -> file -> State colId -> State colId
+toggleFile (Config { idFn }) file (State state) =
+    let
+        id =
+            idFn file
+    in
+    State <|
+        { state
+            | selectedIds =
+                if Set.member id state.selectedIds then
+                    Set.remove id state.selectedIds
+                else
+                    Set.insert id state.selectedIds
+        }
 
 
 viewUserDefinedTds : file -> List (Column id file msg) -> List (Html msg)
@@ -366,7 +423,7 @@ viewUserDefinedTds file =
         )
 
 
-viewUploadedThumbnail : Config columnId file msg -> file -> Html msg
+viewUploadedThumbnail : Config colId file msg -> file -> Html msg
 viewUploadedThumbnail (Config { thumbnailSrcFn }) file =
     img
         [ style thumbnailStyle
