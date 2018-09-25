@@ -191,10 +191,10 @@ taggable tags (Config configRec) =
 ---- VIEW ----
 
 
-view : State colId -> Config colId file msg -> Upload.State file -> List file -> Html msg
-view ((State { direction, sortColumn }) as state) config upload files =
+view : State colId -> Upload.State file -> List file -> Config colId file msg -> Html msg
+view ((State { direction, sortColumn, selectedIds }) as state) upload files ((Config { idFn }) as config) =
     table []
-        [ viewTableHeader state config
+        [ viewTableHeader state config files
         , tbody []
             (upload
                 |> Upload.uploads
@@ -203,6 +203,17 @@ view ((State { direction, sortColumn }) as state) config upload files =
                 |> List.map (viewRow config state)
             )
         ]
+
+
+allUploadedFilesAreSelected : (file -> String) -> Set String -> List file -> Bool
+allUploadedFilesAreSelected idFn selectedIds files =
+    (files
+        |> List.map idFn
+        |> List.foldl Set.insert Set.empty
+        |> Set.intersect selectedIds
+        |> Set.size
+    )
+        == List.length files
 
 
 sortResults : Config colId file msg -> State colId -> List (UploadState file) -> List (UploadState file)
@@ -263,13 +274,32 @@ sortDirPair sortDir a b =
         ( b, a )
 
 
-viewTableHeader : State colId -> Config colId file msg -> Html msg
-viewTableHeader ((State { direction, sortColumn }) as state) ((Config { columns, setListStateMsg, taggable }) as config) =
+viewTableHeader : State colId -> Config colId file msg -> List file -> Html msg
+viewTableHeader ((State { direction, sortColumn, selectedIds }) as state) ((Config { columns, setListStateMsg, taggable, idFn }) as config) files =
+    let
+        allFilesSelected =
+            allUploadedFilesAreSelected idFn selectedIds files
+    in
     thead []
         [ tr []
             (List.concat
-                [ [ th [] [ text "" ]
-                  , th [] [ text "" ]
+                [ [ th
+                        []
+                        [ input
+                            [ type_ "checkbox"
+                            , checked allFilesSelected
+                            , onClick
+                                (setListStateMsg
+                                    (if allFilesSelected then
+                                        deSelectAllFiles state
+                                     else
+                                        selectAllFiles config files state
+                                    )
+                                )
+                            ]
+                            []
+                        ]
+                  , th [] []
                   , th
                         [ style [ ( "cursor", "pointer" ) ]
                         , onClick (setListStateMsg (viewListSorterState SortByFilename state))
@@ -286,6 +316,18 @@ viewTableHeader ((State { direction, sortColumn }) as state) ((Config { columns,
                 ]
             )
         ]
+
+
+selectAllFiles : Config colId file msg -> List file -> State colId -> State colId
+selectAllFiles ((Config { idFn }) as config) files (State state) =
+    State <|
+        { state | selectedIds = List.foldl (idFn >> Set.insert) Set.empty files }
+
+
+deSelectAllFiles : State colId -> State colId
+deSelectAllFiles (State state) =
+    State <|
+        { state | selectedIds = Set.empty }
 
 
 viewCustomSortArrow : colId -> State colId -> Html msg
@@ -328,18 +370,15 @@ viewUserDefinedThs state (Config { columns, setListStateMsg }) =
 
 viewListSorterState : Sort colId -> State colId -> State colId
 viewListSorterState column (State state) =
-    if state.direction == Asc && state.sortColumn == column then
-        State <|
-            { state
-                | direction = Desc
-                , sortColumn = state.sortColumn
-            }
-    else
-        State <|
-            { state
-                | direction = Asc
-                , sortColumn = state.sortColumn
-            }
+    State <|
+        { state
+            | direction =
+                if state.direction == Asc && state.sortColumn == column then
+                    Desc
+                else
+                    Asc
+            , sortColumn = column
+        }
 
 
 combineUploadsWithFiles : List file -> UploadId.Collection (Upload.UploadingFile file) -> List (UploadState file)

@@ -289,7 +289,7 @@ view { upload, files, list } =
         ]
         [ Upload.view upload uploadConfig
         , hr [] []
-        , FileList.view list fileListConfig upload files
+        , FileList.view list upload files fileListConfig
         ]
 
 
