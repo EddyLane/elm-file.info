@@ -3,10 +3,10 @@ module Page.Demo exposing (Model, Msg, init, subscriptions, update, view)
 import Date exposing (Date)
 import Date.Extra
 import Drag
+import File.Data.SignedUrl as SignedUrl exposing (SignedUrl)
+import File.Data.UploadId as UploadId exposing (UploadId)
 import File.List as FileList
-import File.SignedUrl as SignedUrl exposing (SignedUrl)
 import File.Upload as Upload
-import File.UploadId as UploadId exposing (UploadId)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Http

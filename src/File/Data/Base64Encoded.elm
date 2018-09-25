@@ -1,4 +1,4 @@
-module File.Base64Encoded exposing (Base64Encoded, decoder, encoder, toString)
+module File.Data.Base64Encoded exposing (Base64Encoded, decoder, encoder, toString)
 
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode

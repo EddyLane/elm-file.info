@@ -1,4 +1,4 @@
-module File.SignedUrl exposing (SignedUrl, decoder, encoder)
+module File.Data.SignedUrl exposing (SignedUrl, decoder, encoder)
 
 import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline

@@ -66,9 +66,9 @@ When you need to create an uploader you first need to init the state:
 -}
 
 import Drag
-import File.Base64Encoded as Base64Encoded exposing (Base64Encoded)
-import File.SignedUrl as SignedUrl exposing (SignedUrl)
-import File.UploadId as UploadId exposing (UploadId)
+import File.Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
+import File.Data.SignedUrl as SignedUrl exposing (SignedUrl)
+import File.Data.UploadId as UploadId exposing (UploadId)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onWithOptions)
@@ -137,7 +137,7 @@ type UploadStatus file
     | UploadingToS3 Base64Encoded SignedUrl Float file
 
 
-{-| State used to represent this uploade
+{-| State used to represent this uploader
 
     - `dropActive` Is the DropZone currently 'active'; files are hovering over ready to be dropped
     - `uploads` Is the current collection of uploading files
@@ -151,6 +151,15 @@ type alias StateRec file =
     { dropActive : Bool
     , uploads : UploadId.Collection (UploadingFile file)
     }
+
+
+uploads : State file -> UploadId.Collection (UploadingFile file)
+uploads (State { uploads }) =
+    uploads
+
+
+
+---- CONFIG ----
 
 
 type Config msg
@@ -237,11 +246,6 @@ maximumFileSize : Int -> Config msg -> Config msg
 maximumFileSize size (Config configRec) =
     Config <|
         { configRec | maximumFileSize = size }
-
-
-uploads : State file -> UploadId.Collection (UploadingFile file)
-uploads (State { uploads }) =
-    uploads
 
 
 fileName : UploadingFile file -> String
