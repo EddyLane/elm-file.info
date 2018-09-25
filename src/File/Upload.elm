@@ -137,16 +137,16 @@ type UploadStatus file
     | UploadingToS3 Base64Encoded SignedUrl Float file
 
 
+type State file
+    = State (StateRec file)
+
+
 {-| State used to represent this uploader
 
     - `dropActive` Is the DropZone currently 'active'; files are hovering over ready to be dropped
     - `uploads` Is the current collection of uploading files
 
 -}
-type State file
-    = State (StateRec file)
-
-
 type alias StateRec file =
     { dropActive : Bool
     , uploads : UploadId.Collection (UploadingFile file)
@@ -188,11 +188,8 @@ type alias ConfigRec msg =
     }
 
 
-base64Success : ( UploadId, String ) -> State file -> State file
-base64Success ( uploadId, base64 ) (State state) =
-    State state
-
-
+{-| Init the uploader
+-}
 init : State file
 init =
     State <|
@@ -201,6 +198,8 @@ init =
         }
 
 
+{-| Init the configuration of this uploader with a no-op msg
+-}
 config : msg -> Config msg
 config noOpMsg =
     Config <|
@@ -214,24 +213,32 @@ config noOpMsg =
         }
 
 
+{-| Set what happens when files are added to the upload queue
+-}
 onChangeFiles : (String -> List Drag.File -> msg) -> Config msg -> Config msg
 onChangeFiles msg (Config configRec) =
     Config <|
         { configRec | onChangeFilesMsg = msg }
 
 
+{-| Set the id of the input element used to upload files. If multiple uploaders this should be unique
+-}
 inputId : String -> Config msg -> Config msg
 inputId inputId (Config configRec) =
     Config <|
         { configRec | inputId = inputId }
 
 
+{-| Set what happens when manually triggering the uploader (i.e. from an anchor tag)
+-}
 browseFiles : (String -> msg) -> Config msg -> Config msg
 browseFiles msg (Config configRec) =
     Config <|
         { configRec | browseClickMsg = msg }
 
 
+{-| Set what happens when dragging over, dragging out and dropping on the drop zone
+-}
 drag : (Drag.Event -> msg) -> (Drag.Event -> msg) -> (Drag.Event -> msg) -> Config msg -> Config msg
 drag over leave drop (Config configRec) =
     Config <|
@@ -242,22 +249,34 @@ drag over leave drop (Config configRec) =
         }
 
 
+{-| Set the maximum size of the uploaded files **NOT CURRENTLY USED**
+-}
 maximumFileSize : Int -> Config msg -> Config msg
 maximumFileSize size (Config configRec) =
     Config <|
         { configRec | maximumFileSize = size }
 
 
+
+---- FILE ----
+
+
+{-| Get the filename for an uploading file
+-}
 fileName : UploadingFile file -> String
 fileName (UploadingFile { name } _) =
     name
 
 
+{-| Is the uploading file an image?
+-}
 isImage : UploadingFile file -> Bool
 isImage (UploadingFile { typeMIME } _) =
     String.startsWith "image" typeMIME
 
 
+{-| Get the percentage that the uploading file has uploaded
+-}
 uploadPercentage : UploadingFile file -> Float
 uploadPercentage file =
     case file of
@@ -268,6 +287,8 @@ uploadPercentage file =
             0.0
 
 
+{-| Get the base64 data for an uploading file, if ready.
+-}
 base64EncodedData : UploadingFile file -> Maybe Base64Encoded
 base64EncodedData (UploadingFile file status) =
     case status of
@@ -285,11 +306,15 @@ base64EncodedData (UploadingFile file status) =
 ---- UPDATE ----
 
 
+{-| Update the active state of the drop zone
+-}
 dropActive : Bool -> State file -> State file
 dropActive isActive (State state) =
     State { state | dropActive = isActive }
 
 
+{-| Start a list of files uploading. Returns tuple with state of the uploader with the new files and Cmds for ports
+-}
 base64EncodeFiles : List Drag.File -> State file -> ( State file, Cmd msg )
 base64EncodeFiles files (State state) =
     let
@@ -333,36 +358,19 @@ readCmds uploadIds collection =
         |> Cmd.batch
 
 
+{-| Updates a particular uploading file when it the base64 data has been successfully read from JS-land
+-}
 fileReadSuccess : UploadId -> UploadingFile file -> State file -> State file
 fileReadSuccess uploadId file (State state) =
     State <|
         { state | uploads = UploadId.update uploadId (always (Just file)) state.uploads }
 
 
-fileUploadSuccess : UploadId -> State file -> ( State file, Maybe file )
-fileUploadSuccess requestId (State state) =
-    let
-        maybeFile =
-            state.uploads
-                |> UploadId.get requestId
-                |> Maybe.andThen
-                    (\file ->
-                        case file of
-                            UploadingFile _ (UploadingToS3 _ _ _ file) ->
-                                Just file
+{-| Updates the state of a particular file specified by UploadId with the SignedUrl from the backend.
 
-                            _ ->
-                                Nothing
-                    )
+Returns the new state with the file uploading, and a Cmd to send to JS-land to upload it.
 
-        uploads =
-            UploadId.remove requestId state.uploads
-    in
-    ( State { state | uploads = uploads }
-    , maybeFile
-    )
-
-
+-}
 uploadFileToSignedUrl : SignedUrl -> file -> UploadId -> State file -> ( State file, Cmd msg )
 uploadFileToSignedUrl signedUrl backendFile uploadId (State state) =
     let
@@ -407,6 +415,37 @@ uploadCmds files =
         |> Cmd.batch
 
 
+{-| Removes a particular uploading file when the data has been successfully uploaded to the end destination
+
+Returns both the new state of the uploader and the file that has been uploaded
+
+-}
+fileUploadSuccess : UploadId -> State file -> ( State file, Maybe file )
+fileUploadSuccess requestId (State state) =
+    let
+        maybeFile =
+            state.uploads
+                |> UploadId.get requestId
+                |> Maybe.andThen
+                    (\file ->
+                        case file of
+                            UploadingFile _ (UploadingToS3 _ _ _ file) ->
+                                Just file
+
+                            _ ->
+                                Nothing
+                    )
+
+        uploads =
+            UploadId.remove requestId state.uploads
+    in
+    ( State { state | uploads = uploads }
+    , maybeFile
+    )
+
+
+{-| Updates the progress of an upload to S3 from JS-land with a new percentage
+-}
 updateS3UploadProgress : UploadId -> Float -> State file -> State file
 updateS3UploadProgress id progress (State state) =
     State <|
@@ -427,6 +466,13 @@ updateS3UploadProgress id progress (State state) =
         }
 
 
+{-| Cancel an upload specified by the UploadId
+Returns a tuple with:
+
+  - The new internal state of the uploader, with the file removed
+  - Cmds to cancel both the upload and any artifacts created during the upload process
+
+-}
 cancelUpload : UploadId -> State file -> ( State file, Cmd msg )
 cancelUpload uploadId (State state) =
     ( State { state | uploads = UploadId.remove uploadId state.uploads }
