@@ -261,6 +261,10 @@ fileListConfig =
         |> FileList.setListStateMsg SetListState
         |> FileList.defaultSort (FileList.SortByCustom UploadedOn)
         |> FileList.defaultSortDirection FileList.Desc
+        |> FileList.taggable
+            [ "SomeTag"
+            , "AnotherTag"
+            ]
         |> FileList.column
             { id = UploadedOn
             , label = "Uploaded on"

@@ -15,6 +15,7 @@ module File.List
         , init
         , nameFn
         , setListStateMsg
+        , taggable
         , thumbnailSrcFn
         , view
         )
@@ -37,6 +38,11 @@ type Config colId file msg
     = Config (ConfigRec colId file msg)
 
 
+type TabConfig
+    = Taggable (List String)
+    | NotTaggable
+
+
 type alias ConfigRec colId file msg =
     { idFn : file -> String
     , nameFn : file -> String
@@ -47,6 +53,7 @@ type alias ConfigRec colId file msg =
     , setListStateMsg : State colId -> msg
     , defaultCustomSort : Maybe (Sort colId)
     , defaultSortDir : SortDirection
+    , taggable : TabConfig
     }
 
 
@@ -116,6 +123,7 @@ config noOpMsg =
         , setListStateMsg = always noOpMsg
         , defaultCustomSort = Nothing
         , defaultSortDir = Asc
+        , taggable = NotTaggable
         }
 
 
@@ -171,6 +179,12 @@ column : Column colId file msg -> Config colId file msg -> Config colId file msg
 column col (Config configRec) =
     Config <|
         { configRec | columns = col :: configRec.columns }
+
+
+taggable : List String -> Config colId file msg -> Config colId file msg
+taggable tags (Config configRec) =
+    Config <|
+        { configRec | taggable = Taggable tags }
 
 
 
@@ -250,7 +264,7 @@ sortDirPair sortDir a b =
 
 
 viewTableHeader : State colId -> Config colId file msg -> Html msg
-viewTableHeader ((State { direction, sortColumn }) as state) ((Config { columns, setListStateMsg }) as config) =
+viewTableHeader ((State { direction, sortColumn }) as state) ((Config { columns, setListStateMsg, taggable }) as config) =
     thead []
         [ tr []
             (List.concat
@@ -438,3 +452,11 @@ thumbnailStyle =
     , ( "width", "50px" )
     , ( "height", "50px" )
     ]
+
+
+viewIf : Bool -> Html msg -> Html msg
+viewIf condition html =
+    if condition then
+        html
+    else
+        text ""
