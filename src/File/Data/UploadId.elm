@@ -28,6 +28,10 @@ type Collection file
     = Collection UploadId (Dict Int file)
 
 
+
+---- COLLECTION ----
+
+
 init : Collection file
 init =
     Collection (UploadId 1) Dict.empty
@@ -71,7 +75,7 @@ update (UploadId id) updateFn (Collection uploadId collection) =
 
 
 
----- CREATE ----
+---- ENCODING ----
 
 
 decoder : Decoder UploadId

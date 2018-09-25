@@ -63,6 +63,10 @@ When you need to create an uploader you first need to init the state:
     uploadConfig =
         Upload.config NoOp
 
+    -- You can then add the uploader to your view
+
+    Upload.view state config
+
 -}
 
 import Drag
