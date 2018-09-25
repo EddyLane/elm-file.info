@@ -32,7 +32,38 @@ port module File.Upload
         , view
         )
 
---import File.File as File
+{-| Provides an interface to upload files to a remote destination, but needs a whole bunch of wiring to hook it up
+
+The reason this package makes you fill in so many blanks is because it is a trick subject.
+There are many ways to do uploads, so we hope that you can fill in the blanks.
+
+
+# Uploader
+
+When you need to create an uploader you first need to init the state:
+
+    import File.Upload as Upload
+
+    -- You need to keep track of the uploader state in your model
+
+    type alias Model =
+        { upload : Upload.State }
+
+
+    -- The uploader needs to be initialized
+
+    initialState : Upload.State
+    initialState =
+        { upload = Upload.init }
+
+
+    -- You need to then configure the uploader, starting with a NoOp message; a custom type which takes no arguments.
+
+    uploadConfig : Upload.Config Msg
+    uploadConfig =
+        Upload.config NoOp
+
+-}
 
 import Drag
 import File.Base64Encoded as Base64Encoded exposing (Base64Encoded)
@@ -49,24 +80,46 @@ import Json.Encode as Encode
 --- PORTS -----
 
 
+{-| A port used to trigger the onClick event on an actual file input, specified by the String param
+-}
 port browseClick : String -> Cmd msg
 
 
+{-| A port used to update the progress of the upload from JS-land; Encode.Value is the UploadId and Float is the percent
+-}
 port uploadProgress : (( Encode.Value, Float ) -> msg) -> Sub msg
 
 
+{-| A port used to cancel the upload in JS-land. Encode.Value is the UploadId
+-}
 port uploadCancelled : Encode.Value -> Cmd msg
 
 
-port fileContentRead : (Encode.Value -> msg) -> Sub msg
-
-
+{-| A port used to tell JS-land to read the Base64 file content of a file.
+The Encode.Value is the UploadId
+The Decode.Value is the raw JS file event. For more details see the Drag.File documentation.
+-}
 port readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
 
 
+{-| A port used to update the internal file with the Base64 encoded file
+-}
+port fileContentRead : (Encode.Value -> msg) -> Sub msg
+
+
+{-| A port used to tell JS-land to actually upload a file to S3. Sends the UploadId, SignedUrl and Base64Encoded data
+The encode values are:
+
+  - UploadId
+  - SignedUrl
+  - Base64Encoded
+
+-}
 port upload : ( Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
 
 
+{-| A port used to tell the internal state that the file has been successfully uploaded
+-}
 port uploaded : (Encode.Value -> msg) -> Sub msg
 
 
@@ -84,13 +137,18 @@ type UploadStatus file
     | UploadingToS3 Base64Encoded SignedUrl Float file
 
 
+{-| State used to represent this uploade
+
+    - `dropActive` Is the DropZone currently 'active'; files are hovering over ready to be dropped
+    - `uploads` Is the current collection of uploading files
+
+-}
 type State file
     = State (StateRec file)
 
 
 type alias StateRec file =
     { dropActive : Bool
-    , selectAllToggled : Bool
     , uploads : UploadId.Collection (UploadingFile file)
     }
 
@@ -99,9 +157,19 @@ type Config msg
     = Config (ConfigRec msg)
 
 
+{-| Configuration information for describing the behaviour of the Uploader
+
+    - `onChangeFilesMsg` Msg called with the ID of the multiple file input and a list of files when input changes
+    - `browseClickMsg` Msg called with the ID of the multiple file input to simulate a click on the input
+    - `dragOverMsg` Msg called when dragging files over the dropzone
+    - `dragLeaveMsg` Msg called when dragging files out of the dropzone
+    - `dropMsg` Msg called when dropping a collection of files on the dropzone
+    - `maximumFileSize` The maximum size of files to upload, **NOT CURRENTLY USED**
+    - `inputId` The ID of the actual form input that is used.
+
+-}
 type alias ConfigRec msg =
     { onChangeFilesMsg : String -> List Drag.File -> msg
-    , softDeleteSelectedMsg : msg
     , browseClickMsg : String -> msg
     , dragOverMsg : Drag.Event -> msg
     , dragLeaveMsg : Drag.Event -> msg
@@ -120,7 +188,6 @@ init : State file
 init =
     State <|
         { dropActive = False
-        , selectAllToggled = False
         , uploads = UploadId.init
         }
 
@@ -129,7 +196,6 @@ config : msg -> Config msg
 config noOpMsg =
     Config <|
         { onChangeFilesMsg = always (always noOpMsg)
-        , softDeleteSelectedMsg = noOpMsg
         , browseClickMsg = always noOpMsg
         , dragOverMsg = always noOpMsg
         , dragLeaveMsg = always noOpMsg
@@ -149,12 +215,6 @@ inputId : String -> Config msg -> Config msg
 inputId inputId (Config configRec) =
     Config <|
         { configRec | inputId = inputId }
-
-
-softDelete : msg -> Config msg -> Config msg
-softDelete msg (Config configRec) =
-    Config <|
-        { configRec | softDeleteSelectedMsg = msg }
 
 
 browseFiles : (String -> msg) -> Config msg -> Config msg
