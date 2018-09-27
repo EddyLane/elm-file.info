@@ -14,8 +14,8 @@ module File.List
         , idFn
         , init
         , nameFn
+        , rowActions
         , setListStateMsg
-        , taggable
         , thumbnailSrcFn
         , view
         )
@@ -38,7 +38,7 @@ type Config colId file msg
     = Config (ConfigRec colId file msg)
 
 
-type TabConfig
+type TagConfig
     = Taggable (List String)
     | NotTaggable
 
@@ -53,7 +53,7 @@ type alias ConfigRec colId file msg =
     , setListStateMsg : State colId -> msg
     , defaultCustomSort : Maybe (Sort colId)
     , defaultSortDir : SortDirection
-    , taggable : TabConfig
+    , rowActions : file -> Maybe (Html msg)
     }
 
 
@@ -81,7 +81,7 @@ type Sort id
 type alias Column id file msg =
     { id : id
     , label : String
-    , html : file -> Html msg
+    , html : ( file, Bool ) -> Html msg
     , sorter : file -> file -> Order
     }
 
@@ -123,8 +123,14 @@ config noOpMsg =
         , setListStateMsg = always noOpMsg
         , defaultCustomSort = Nothing
         , defaultSortDir = Asc
-        , taggable = NotTaggable
+        , rowActions = always Nothing
         }
+
+
+rowActions : (file -> Maybe (Html msg)) -> Config colId file msg -> Config colId file msg
+rowActions rowActions (Config configRec) =
+    Config <|
+        { configRec | rowActions = rowActions }
 
 
 setListStateMsg : (State colId -> msg) -> Config colId file msg -> Config colId file msg
@@ -179,12 +185,6 @@ column : Column colId file msg -> Config colId file msg -> Config colId file msg
 column col (Config configRec) =
     Config <|
         { configRec | columns = col :: configRec.columns }
-
-
-taggable : List String -> Config colId file msg -> Config colId file msg
-taggable tags (Config configRec) =
-    Config <|
-        { configRec | taggable = Taggable tags }
 
 
 
@@ -275,10 +275,13 @@ sortDirPair sortDir a b =
 
 
 viewTableHeader : State colId -> Config colId file msg -> List file -> Html msg
-viewTableHeader ((State { direction, sortColumn, selectedIds }) as state) ((Config { columns, setListStateMsg, taggable, idFn }) as config) files =
+viewTableHeader ((State stateRec) as state) ((Config { columns, setListStateMsg, idFn }) as config) files =
     let
         allFilesSelected =
-            allUploadedFilesAreSelected idFn selectedIds files
+            if List.isEmpty files then
+                False
+            else
+                allUploadedFilesAreSelected idFn stateRec.selectedIds files
     in
     thead []
         [ tr []
@@ -305,8 +308,8 @@ viewTableHeader ((State { direction, sortColumn, selectedIds }) as state) ((Conf
                         , onClick (setListStateMsg (viewListSorterState SortByFilename state))
                         ]
                         [ text "File"
-                        , if sortColumn == SortByFilename then
-                            viewActiveSortArrow direction
+                        , if stateRec.sortColumn == SortByFilename then
+                            viewActiveSortArrow stateRec.direction
                           else
                             text ""
                         ]
@@ -446,7 +449,7 @@ viewUploadedRow ((Config configRec) as config) ((State { selectedIds }) as state
               , td [] [ viewUploadedThumbnail config file ]
               , td [] [ text (configRec.nameFn file) ]
               ]
-            , viewUserDefinedTds file configRec.columns
+            , viewUserDefinedTds file selectedIds configRec.idFn configRec.columns
             , [ td [] [] ]
             ]
         )
@@ -468,12 +471,15 @@ toggleFile (Config { idFn }) file (State state) =
         }
 
 
-viewUserDefinedTds : file -> List (Column id file msg) -> List (Html msg)
-viewUserDefinedTds file =
-    List.map
-        (\{ html } ->
-            td [] [ html file ]
-        )
+viewUserDefinedTds : file -> Set String -> (file -> String) -> List (Column id file msg) -> List (Html msg)
+viewUserDefinedTds file selectedIds idFn =
+    List.map (viewUserDefinedTd file (Set.member (idFn file) selectedIds))
+
+
+viewUserDefinedTd : file -> Bool -> Column id file msg -> Html msg
+viewUserDefinedTd file isSelected column =
+    td []
+        [ column.html ( file, isSelected ) ]
 
 
 viewUploadedThumbnail : Config colId file msg -> file -> Html msg

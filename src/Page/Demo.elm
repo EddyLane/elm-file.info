@@ -9,10 +9,12 @@ import File.List as FileList
 import File.Upload as Upload
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (onClick)
 import Http
 import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
+import Set exposing (Set)
 import Task exposing (Task)
 
 
@@ -33,7 +35,7 @@ getAttachmentsUrl =
 type alias Model =
     { upload : Upload.State Attachment
     , list : FileList.State ColumnId
-    , files : List Attachment
+    , files : List (Taggable Attachment)
     }
 
 
@@ -42,7 +44,7 @@ init =
     Task.map (Model Upload.init (FileList.init fileListConfig)) loadAttachments
 
 
-loadAttachments : Task Http.Error (List Attachment)
+loadAttachments : Task Http.Error (List (Taggable Attachment))
 loadAttachments =
     Http.get getAttachmentsUrl (Decode.list attachmentDecoder)
         |> Http.toTask
@@ -55,8 +57,12 @@ A representation of your business logic data type "File" as specified by what yo
 --}
 
 
+type Taggable a
+    = Taggable Bool a
+
+
 type alias AttachmentResponse =
-    { attachment : Attachment
+    { attachment : Taggable Attachment
     , signedUrl : SignedUrl
     }
 
@@ -68,10 +74,11 @@ type alias Attachment =
     , contentType : String
     , fileName : String
     , uploadedBy : String
+    , tag : Maybe String
     }
 
 
-attachmentDecoder : Decode.Decoder Attachment
+attachmentDecoder : Decode.Decoder (Taggable Attachment)
 attachmentDecoder =
     Decode.field "date" Decode.string
         |> Decode.andThen
@@ -84,6 +91,8 @@ attachmentDecoder =
                             |> Pipeline.required "contentType" Decode.string
                             |> Pipeline.required "fileName" Decode.string
                             |> Pipeline.required "uploadedBy" Decode.string
+                            |> Pipeline.required "tag" (Decode.nullable Decode.string)
+                            |> Decode.andThen (Taggable False >> Decode.succeed)
 
                     Err _ ->
                         Decode.fail "Could not parse date"
@@ -107,6 +116,7 @@ type Msg
     | UploadProgress UploadId Float
     | CancelUpload UploadId
     | SetListState (FileList.State ColumnId)
+    | ToggleFileTagging Attachment
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -161,8 +171,11 @@ update msg model =
 
         GotSignedS3Url file (Ok { attachment, signedUrl }) ->
             let
+                (Taggable _ rawAttachment) =
+                    attachment
+
                 ( upload, uploadCmd ) =
-                    Upload.uploadFileToSignedUrl signedUrl attachment file model.upload
+                    Upload.uploadFileToSignedUrl signedUrl rawAttachment file model.upload
             in
             ( { model | upload = upload }
             , uploadCmd
@@ -194,7 +207,7 @@ update msg model =
 
                 files =
                     maybeAttachment
-                        |> Maybe.map (\attachment -> attachment :: model.files)
+                        |> Maybe.map (\attachment -> Taggable False attachment :: model.files)
                         |> Maybe.withDefault model.files
             in
             ( { model
@@ -206,6 +219,22 @@ update msg model =
 
         UploadedFile (Err e) ->
             ( model
+            , Cmd.none
+            )
+
+        ToggleFileTagging target ->
+            let
+                files =
+                    List.map
+                        (\((Taggable tagging attachment) as current) ->
+                            if attachment.id == target.id then
+                                Taggable (not tagging) attachment
+                            else
+                                current
+                        )
+                        model.files
+            in
+            ( { model | files = files }
             , Cmd.none
             )
 
@@ -248,6 +277,14 @@ uploadConfig =
 type ColumnId
     = UploadedOn
     | UploadedBy
+    | Tags
+
+
+tags : List String
+tags =
+    [ "SomeTag"
+    , "AnotherTag"
+    ]
 
 
 fileListConfig : FileList.Config ColumnId Attachment Msg
@@ -261,26 +298,60 @@ fileListConfig =
         |> FileList.setListStateMsg SetListState
         |> FileList.defaultSort (FileList.SortByCustom UploadedOn)
         |> FileList.defaultSortDirection FileList.Desc
-        |> FileList.taggable
-            [ "SomeTag"
-            , "AnotherTag"
-            ]
+        |> FileList.rowActions (always Nothing)
         |> FileList.column
             { id = UploadedOn
             , label = "Uploaded on"
-            , html = .uploadedAt >> Date.Extra.toFormattedString "d MMM YYY HH:mm" >> text
+            , html = Tuple.first >> .uploadedAt >> Date.Extra.toFormattedString "d MMM YYY HH:mm" >> text
             , sorter = \a b -> Date.Extra.compare a.uploadedAt b.uploadedAt
             }
         |> FileList.column
             { id = UploadedBy
             , label = "Uploaded by"
-            , html = .uploadedBy >> text
+            , html = Tuple.first >> .uploadedBy >> text
             , sorter = \a b -> compare a.uploadedBy b.uploadedBy
             }
+        |> FileList.column
+            { id = Tags
+            , label = "Tag"
+            , html =
+                \( attachment, isSelected ) ->
+                    case attachment.tag of
+                        Just tag ->
+                            span [] [ text tag ]
+
+                        Nothing ->
+                            button [ onClick (ToggleFileTagging attachment) ] [ text "Add tag" ]
+            , sorter =
+                \a b ->
+                    case ( a.tag, b.tag ) of
+                        ( Just a, Just b ) ->
+                            compare a b
+
+                        ( Just a, Nothing ) ->
+                            compare 1 2
+
+                        ( Nothing, Just b ) ->
+                            compare 2 1
+
+                        ( Nothing, Nothing ) ->
+                            compare 1 1
+            }
+
+
+viewTagSelect : ( Attachment, Bool ) -> Html Msg
+viewTagSelect ( { tag }, isSelected ) =
+    select
+        []
+        (List.map (\t -> option [] [ text t ]) tags)
 
 
 view : Model -> Html Msg
 view { upload, files, list } =
+    let
+        attachments =
+            List.map (\(Taggable _ attachment) -> attachment) files
+    in
     div
         [ style
             [ ( "width", "700px" )
@@ -289,7 +360,7 @@ view { upload, files, list } =
         ]
         [ Upload.view upload uploadConfig
         , hr [] []
-        , FileList.view list upload files fileListConfig
+        , FileList.view list upload attachments fileListConfig
         ]
 
 

@@ -50,6 +50,7 @@ app.post('/signed-upload-url', ({body: {contentType, fileName}}, res) => {
         reference,
         uploadedBy: "Test User",
         fileName,
+        tag: null,
         contentType,
         date: new Date
     };
