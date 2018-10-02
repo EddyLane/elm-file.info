@@ -15,9 +15,11 @@ port module File.Upload
         , fileContentRead
         , fileName
         , fileReadSuccess
+        , fileUploadFailure
         , fileUploadSuccess
         , init
         , inputId
+        , isFailed
         , isImage
         , maximumFileSize
         , onChangeFiles
@@ -122,6 +124,11 @@ The encode values are:
 port upload : ( Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
 
 
+{-| A port used to tell the internal state that an upload has failed, and to update accordingly}
+-}
+port uploadFailed : (Encode.Value -> msg) -> Sub msg
+
+
 {-| A port used to tell the internal state that the file has been successfully uploaded
 -}
 port uploaded : (Encode.Value -> msg) -> Sub msg
@@ -139,6 +146,7 @@ type UploadStatus file
     = ReadingBase64
     | GettingSignedS3Url Base64Encoded
     | UploadingToS3 Base64Encoded SignedUrl Float file
+    | Failed
 
 
 type State file
@@ -272,6 +280,18 @@ fileName (UploadingFile { name } _) =
     name
 
 
+{-| Is the upload failed?
+-}
+isFailed : UploadingFile file -> Bool
+isFailed (UploadingFile _ uploadState) =
+    case uploadState of
+        Failed ->
+            True
+
+        _ ->
+            False
+
+
 {-| Is the uploading file an image?
 -}
 isImage : UploadingFile file -> Bool
@@ -304,6 +324,9 @@ base64EncodedData (UploadingFile file status) =
 
         UploadingToS3 base64Encoded _ _ _ ->
             Just base64Encoded
+
+        Failed ->
+            Nothing
 
 
 
@@ -446,6 +469,21 @@ fileUploadSuccess requestId (State state) =
     ( State { state | uploads = uploads }
     , maybeFile
     )
+
+
+fileUploadFailure : UploadId -> State file -> State file
+fileUploadFailure requestId (State state) =
+    State <|
+        { state
+            | uploads =
+                UploadId.update requestId
+                    (Maybe.map
+                        (\(UploadingFile rawFile _) ->
+                            UploadingFile rawFile Failed
+                        )
+                    )
+                    state.uploads
+        }
 
 
 {-| Updates the progress of an upload to S3 from JS-land with a new percentage

@@ -9,12 +9,11 @@ import File.List as FileList
 import File.Upload as Upload
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
+import Html.Events exposing (on, onClick)
 import Http
 import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
-import Set exposing (Set)
 import Task exposing (Task)
 
 
@@ -25,7 +24,12 @@ signedUrlProviderUrl =
 
 getAttachmentsUrl : String
 getAttachmentsUrl =
-    "http://localhost:3003/get-attachments"
+    "http://localhost:3003/attachments"
+
+
+updateAttachmentUrl : Attachment -> String
+updateAttachmentUrl { reference } =
+    "http://localhost:3003/attachments/" ++ reference
 
 
 
@@ -41,7 +45,15 @@ type alias Model =
 
 init : Task Http.Error Model
 init =
-    Task.map (Model Upload.init (FileList.init fileListConfig)) loadAttachments
+    Task.map initialModel loadAttachments
+
+
+initialModel : List (Taggable Attachment) -> Model
+initialModel files =
+    { upload = Upload.init
+    , list = FileList.init (fileListConfig files)
+    , files = files
+    }
 
 
 loadAttachments : Task Http.Error (List (Taggable Attachment))
@@ -99,6 +111,22 @@ attachmentDecoder =
             )
 
 
+attachmentEncoder : Attachment -> Encode.Value
+attachmentEncoder attachment =
+    Encode.object
+        [ ( "id", Encode.int attachment.id )
+        , ( "reference", Encode.string attachment.reference )
+        , ( "contentType", Encode.string attachment.contentType )
+        , ( "fileName", Encode.string attachment.fileName )
+        , ( "uploadedBy", Encode.string attachment.uploadedBy )
+        , ( "tag"
+          , attachment.tag
+                |> Maybe.map Encode.string
+                |> Maybe.withDefault Encode.null
+          )
+        ]
+
+
 
 ---- UPDATE ----
 
@@ -113,10 +141,15 @@ type Msg
     | DropFiles Drag.Event
     | GotSignedS3Url UploadId (Result Http.Error AttachmentResponse)
     | UploadedFile (Result String UploadId)
+    | UploadFailed UploadId
     | UploadProgress UploadId Float
     | CancelUpload UploadId
     | SetListState (FileList.State ColumnId)
     | ToggleFileTagging Attachment
+
+
+
+--    | SetTag Attachment String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -200,6 +233,11 @@ update msg model =
             , cancelCmd
             )
 
+        UploadFailed requestId ->
+            ( { model | upload = Upload.fileUploadFailure requestId model.upload }
+            , Cmd.none
+            )
+
         UploadedFile (Ok requestId) ->
             let
                 ( upload, maybeAttachment ) =
@@ -243,10 +281,8 @@ update msg model =
             , Cmd.none
             )
 
-        _ ->
-            ( model
-            , Cmd.none
-            )
+        NoOp ->
+            ( model, Cmd.none )
 
 
 getSignedUrl : Upload.UploadingFile file -> Task Http.Error AttachmentResponse
@@ -257,6 +293,20 @@ getSignedUrl file =
             |> Pipeline.required "attachment" attachmentDecoder
             |> Pipeline.required "signedUrl" SignedUrl.decoder
         )
+        |> Http.toTask
+
+
+updateAttachment : Attachment -> Task Http.Error ()
+updateAttachment attachment =
+    Http.request
+        { method = "PUT"
+        , headers = []
+        , url = updateAttachmentUrl attachment
+        , body = attachmentEncoder attachment |> Http.jsonBody
+        , expect = Http.expectStringResponse (always <| Ok ())
+        , timeout = Nothing
+        , withCredentials = False
+        }
         |> Http.toTask
 
 
@@ -287,8 +337,22 @@ tags =
     ]
 
 
-fileListConfig : FileList.Config ColumnId Attachment Msg
-fileListConfig =
+isCurrentlyTagging : Attachment -> List (Taggable Attachment) -> Bool
+isCurrentlyTagging attachment taggableAttachments =
+    taggableAttachments
+        |> List.filterMap
+            (\(Taggable tagging { id }) ->
+                if id == attachment.id then
+                    Just tagging
+                else
+                    Nothing
+            )
+        |> List.head
+        |> Maybe.withDefault False
+
+
+fileListConfig : List (Taggable Attachment) -> FileList.Config ColumnId Attachment Msg
+fileListConfig uploadedFiles =
     FileList.config NoOp
         |> FileList.idFn .reference
         |> FileList.nameFn .fileName
@@ -298,7 +362,17 @@ fileListConfig =
         |> FileList.setListStateMsg SetListState
         |> FileList.defaultSort (FileList.SortByCustom UploadedOn)
         |> FileList.defaultSortDirection FileList.Desc
-        |> FileList.rowActions (always Nothing)
+        |> FileList.rowActions
+            (\attachment ->
+                if isCurrentlyTagging attachment uploadedFiles then
+                    Just <|
+                        div []
+                            [ select [] (List.map (\t -> option [] [ text t ]) tags)
+                            , button [ onClick (ToggleFileTagging attachment) ] [ text "Close" ]
+                            ]
+                else
+                    Nothing
+            )
         |> FileList.column
             { id = UploadedOn
             , label = "Uploaded on"
@@ -318,10 +392,20 @@ fileListConfig =
                 \( attachment, isSelected ) ->
                     case attachment.tag of
                         Just tag ->
-                            span [] [ text tag ]
+                            span
+                                []
+                                [ text tag ]
 
                         Nothing ->
-                            button [ onClick (ToggleFileTagging attachment) ] [ text "Add tag" ]
+                            button
+                                [ onClick (ToggleFileTagging attachment) ]
+                                [ text
+                                    (if isCurrentlyTagging attachment uploadedFiles then
+                                        "..."
+                                     else
+                                        "Add tag"
+                                    )
+                                ]
             , sorter =
                 \a b ->
                     case ( a.tag, b.tag ) of
@@ -339,13 +423,6 @@ fileListConfig =
             }
 
 
-viewTagSelect : ( Attachment, Bool ) -> Html Msg
-viewTagSelect ( { tag }, isSelected ) =
-    select
-        []
-        (List.map (\t -> option [] [ text t ]) tags)
-
-
 view : Model -> Html Msg
 view { upload, files, list } =
     let
@@ -360,7 +437,7 @@ view { upload, files, list } =
         ]
         [ Upload.view upload uploadConfig
         , hr [] []
-        , FileList.view list upload attachments fileListConfig
+        , FileList.view list upload attachments (fileListConfig files)
         ]
 
 

@@ -200,7 +200,7 @@ view ((State { direction, sortColumn, selectedIds }) as state) upload files ((Co
                 |> Upload.uploads
                 |> combineUploadsWithFiles files
                 |> sortResults config state
-                |> List.map (viewRow config state)
+                |> List.concatMap (viewRow config state)
             )
         ]
 
@@ -392,29 +392,48 @@ combineUploadsWithFiles files uploads =
         ]
 
 
-viewRow : Config colId file msg -> State colId -> UploadState file -> Html msg
-viewRow ((Config { idFn }) as config) state file =
+viewRow : Config colId file msg -> State colId -> UploadState file -> List (Html msg)
+viewRow ((Config { idFn, rowActions, columns }) as config) state file =
     case file of
         Uploading uploadId uploadingFile ->
-            viewUploadingRow config uploadId uploadingFile
+            [ viewUploadingRow config uploadId uploadingFile ]
 
         Uploaded file ->
-            viewUploadedRow config state file
+            let
+                actionsRow =
+                    file
+                        |> rowActions
+                        |> Maybe.map
+                            (\rowContent ->
+                                tr []
+                                    [ td [ colspan (List.length columns + 4) ] [ rowContent ]
+                                    ]
+                            )
+                        |> Maybe.withDefault (text "")
+            in
+            [ viewUploadedRow config state file
+            , actionsRow
+            ]
 
 
 viewUploadingRow : Config colId file msg -> UploadId -> UploadingFile file -> Html msg
 viewUploadingRow (Config { cancelUploadMsg, columns }) uploadId file =
-    tr []
+    tr
+        [ classList [ ( "failed", Upload.isFailed file ) ]
+        ]
         [ td [] []
         , td [] [ viewUploadingThumbnail file ]
         , td [] [ text <| Upload.fileName file ]
         , td
             [ colspan (List.length columns) ]
-            [ progress
-                [ Attributes.max "100.0"
-                , Attributes.value (Upload.uploadPercentage file |> toString)
-                ]
-                []
+            [ if Upload.isFailed file then
+                text ""
+              else
+                progress
+                    [ Attributes.max "100.0"
+                    , Attributes.value (Upload.uploadPercentage file |> toString)
+                    ]
+                    []
             ]
         , td [] [ button [ onClick (cancelUploadMsg uploadId) ] [ text "Cancel" ] ]
         ]

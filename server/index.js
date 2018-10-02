@@ -74,7 +74,7 @@ app.post('/signed-upload-url', ({body: {contentType, fileName}}, res) => {
 
 });
 
-app.get('/get-attachments', (req, res) => {
+app.get('/attachments', (req, res) => {
     res.json(Object.values(files));
 });
 

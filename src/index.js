@@ -18,9 +18,12 @@ app.ports.readFileContent.subscribe(([id, file]) => {
         app.ports.fileContentRead.send({id, result});
     });
 
+    reader.onerror = () => app.ports.uploadFailed.send(id);
+
     reader.readAsDataURL(file);
 
 });
+
 
 app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
 
@@ -56,6 +59,7 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
 
             uploadRequest.onerror = () => {
                 console.error(`PORT: Upload failure (${id})`);
+                app.ports.uploadFailed.send(id);
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
 
