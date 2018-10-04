@@ -9,7 +9,7 @@ import File.List as FileList
 import File.Upload as Upload
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (on, onClick)
+import Html.Events exposing (on, onClick, targetValue)
 import Http
 import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
@@ -115,6 +115,7 @@ attachmentEncoder : Attachment -> Encode.Value
 attachmentEncoder attachment =
     Encode.object
         [ ( "id", Encode.int attachment.id )
+        , ( "date", Encode.string <| Date.Extra.toIsoString attachment.uploadedAt )
         , ( "reference", Encode.string attachment.reference )
         , ( "contentType", Encode.string attachment.contentType )
         , ( "fileName", Encode.string attachment.fileName )
@@ -146,10 +147,7 @@ type Msg
     | CancelUpload UploadId
     | SetListState (FileList.State ColumnId)
     | ToggleFileTagging Attachment
-
-
-
---    | SetTag Attachment String
+    | SetTag Attachment (Maybe String)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -276,6 +274,28 @@ update msg model =
             , Cmd.none
             )
 
+        SetTag target tag ->
+            let
+                attachment =
+                    { target | tag = tag }
+
+                taggedFile =
+                    Taggable False attachment
+
+                files =
+                    List.map
+                        (\((Taggable _ { reference }) as taggableFile) ->
+                            if reference == target.reference then
+                                taggedFile
+                            else
+                                taggableFile
+                        )
+                        model.files
+            in
+            ( { model | files = files }
+            , Task.attempt (always NoOp) (updateAttachment attachment)
+            )
+
         SetListState list ->
             ( { model | list = list }
             , Cmd.none
@@ -365,10 +385,32 @@ fileListConfig uploadedFiles =
         |> FileList.rowActions
             (\attachment ->
                 if isCurrentlyTagging attachment uploadedFiles then
+                    let
+                        decoder =
+                            Decode.map (SetTag attachment) <|
+                                Decode.andThen (Just >> Decode.succeed) targetValue
+                    in
                     Just <|
                         div []
-                            [ select [] (List.map (\t -> option [] [ text t ]) tags)
-                            , button [ onClick (ToggleFileTagging attachment) ] [ text "Close" ]
+                            [ select
+                                [ on "change" decoder ]
+                                (List.map
+                                    (\t ->
+                                        option
+                                            [ value t
+                                            , selected
+                                                (attachment.tag
+                                                    |> Maybe.map ((==) t)
+                                                    |> Maybe.withDefault False
+                                                )
+                                            ]
+                                            [ text t ]
+                                    )
+                                    tags
+                                )
+                            , button
+                                [ onClick (ToggleFileTagging attachment) ]
+                                [ text "Close" ]
                             ]
                 else
                     Nothing
@@ -394,7 +436,9 @@ fileListConfig uploadedFiles =
                         Just tag ->
                             span
                                 []
-                                [ text tag ]
+                                [ text tag
+                                , button [ onClick (SetTag attachment Nothing) ] [ text "Remove tag" ]
+                                ]
 
                         Nothing ->
                             button

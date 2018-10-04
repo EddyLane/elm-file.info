@@ -78,6 +78,15 @@ app.get('/attachments', (req, res) => {
     res.json(Object.values(files));
 });
 
+app.put('/attachments/:reference', ({ body, params: { reference }}, res) => {
+
+    if (Object.keys(files).indexOf(reference) !== -1) {
+        files[reference] = body;
+    }
+
+    res.json(body);
+});
+
 app.get('/download/:reference', ({params: {reference}}, res) => {
 
     const file = files[reference];
