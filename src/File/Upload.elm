@@ -12,6 +12,7 @@ port module File.Upload
         , config
         , drag
         , dropActive
+        , dropzoneAttrs
         , fileContentRead
         , fileName
         , fileReadSuccess
@@ -26,6 +27,7 @@ port module File.Upload
         , signedUrlMetadataEncoder
         , updateS3UploadProgress
         , uploadCancelled
+        , uploadFailed
         , uploadFileToSignedUrl
         , uploadPercentage
         , uploadProgress
@@ -197,6 +199,7 @@ type alias ConfigRec msg =
     , dropMsg : Drag.Event -> msg
     , maximumFileSize : Int
     , inputId : String
+    , dropZoneAttrs : List (Attribute msg)
     }
 
 
@@ -222,7 +225,16 @@ config noOpMsg =
         , dropMsg = always noOpMsg
         , maximumFileSize = 5000
         , inputId = "elm-file-upload-input"
+        , dropZoneAttrs = []
         }
+
+
+{-| Set attributes for the dropzone
+-}
+dropzoneAttrs : List (Attribute msg) -> Config msg -> Config msg
+dropzoneAttrs dropZoneAttrs (Config configRec) =
+    Config <|
+        { configRec | dropZoneAttrs = dropZoneAttrs }
 
 
 {-| Set what happens when files are added to the upload queue
@@ -528,7 +540,7 @@ cancelUpload uploadId (State state) =
 
 view : State file -> Config msg -> Html msg
 view (State state) (Config config) =
-    div []
+    div config.dropZoneAttrs
         [ dropZone state config
         , fileInput config
         ]

@@ -87,6 +87,7 @@ type alias Attachment =
     , fileName : String
     , uploadedBy : String
     , tag : Maybe String
+    , softDeleting : Bool
     }
 
 
@@ -104,6 +105,7 @@ attachmentDecoder =
                             |> Pipeline.required "fileName" Decode.string
                             |> Pipeline.required "uploadedBy" Decode.string
                             |> Pipeline.required "tag" (Decode.nullable Decode.string)
+                            |> Pipeline.required "softDeleting" Decode.bool
                             |> Decode.andThen (Taggable False >> Decode.succeed)
 
                     Err _ ->
@@ -120,6 +122,7 @@ attachmentEncoder attachment =
         , ( "contentType", Encode.string attachment.contentType )
         , ( "fileName", Encode.string attachment.fileName )
         , ( "uploadedBy", Encode.string attachment.uploadedBy )
+        , ( "softDeleting", Encode.bool attachment.softDeleting )
         , ( "tag"
           , attachment.tag
                 |> Maybe.map Encode.string
@@ -148,6 +151,7 @@ type Msg
     | SetListState (FileList.State ColumnId)
     | ToggleFileTagging Attachment
     | SetTag Attachment (Maybe String)
+    | SoftDelete Bool Attachment
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -200,20 +204,20 @@ update msg model =
             , Cmd.none
             )
 
-        GotSignedS3Url file (Ok { attachment, signedUrl }) ->
+        GotSignedS3Url uploadId (Ok { attachment, signedUrl }) ->
             let
                 (Taggable _ rawAttachment) =
                     attachment
 
                 ( upload, uploadCmd ) =
-                    Upload.uploadFileToSignedUrl signedUrl rawAttachment file model.upload
+                    Upload.uploadFileToSignedUrl signedUrl rawAttachment uploadId model.upload
             in
             ( { model | upload = upload }
             , uploadCmd
             )
 
-        GotSignedS3Url _ (Err e) ->
-            ( model
+        GotSignedS3Url uploadId (Err e) ->
+            ( { model | upload = Upload.fileUploadFailure uploadId model.upload }
             , Cmd.none
             )
 
@@ -231,8 +235,8 @@ update msg model =
             , cancelCmd
             )
 
-        UploadFailed requestId ->
-            ( { model | upload = Upload.fileUploadFailure requestId model.upload }
+        UploadFailed uploadId ->
+            ( { model | upload = Upload.fileUploadFailure uploadId model.upload }
             , Cmd.none
             )
 
@@ -301,6 +305,28 @@ update msg model =
             , Cmd.none
             )
 
+        SoftDelete softDeleting target ->
+            let
+                attachment =
+                    { target | softDeleting = softDeleting }
+
+                taggedFile =
+                    Taggable False attachment
+
+                files =
+                    model.files
+                        |> List.map
+                            (\((Taggable _ { reference }) as f) ->
+                                if target.reference == reference then
+                                    taggedFile
+                                else
+                                    f
+                            )
+            in
+            ( { model | files = files }
+            , Task.attempt (always NoOp) (updateAttachment attachment)
+            )
+
         NoOp ->
             ( model, Cmd.none )
 
@@ -342,12 +368,14 @@ uploadConfig =
         |> Upload.browseFiles OpenFileBrowser
         |> Upload.drag DragFilesOver DragFilesLeave DropFiles
         |> Upload.inputId "elm-file-example"
+        |> Upload.dropzoneAttrs [ class "card-body" ]
 
 
 type ColumnId
     = UploadedOn
     | UploadedBy
     | Tags
+    | Delete
 
 
 tags : List String
@@ -371,17 +399,39 @@ isCurrentlyTagging attachment taggableAttachments =
         |> Maybe.withDefault False
 
 
+ifNotSoftDeleting : (( Attachment, Bool ) -> Html Msg) -> ( Attachment, Bool ) -> Html Msg
+ifNotSoftDeleting htmlFn ( attachment, isSelected ) =
+    if attachment.softDeleting then
+        text ""
+    else
+        htmlFn ( attachment, isSelected )
+
+
 fileListConfig : List (Taggable Attachment) -> FileList.Config ColumnId Attachment Msg
 fileListConfig uploadedFiles =
     FileList.config NoOp
         |> FileList.idFn .reference
         |> FileList.nameFn .fileName
         |> FileList.contentTypeFn .contentType
-        |> FileList.thumbnailSrcFn (.reference >> (++) "http://localhost:3003/download/")
+        |> FileList.thumbnailSrcFn (.reference >> (++) "http://localhost:3003/attachments/")
         |> FileList.cancelUploadMsg CancelUpload
         |> FileList.setListStateMsg SetListState
         |> FileList.defaultSort (FileList.SortByCustom UploadedOn)
         |> FileList.defaultSortDirection FileList.Desc
+        |> FileList.rowDisabled .softDeleting
+        |> FileList.failedRowAttrs (always [ style [ ( "background-color", "#f8d7da" ) ] ])
+        |> FileList.uploadedRowAttrs
+            (\attachment ->
+                [ style
+                    [ ( "background-color"
+                      , if attachment.softDeleting then
+                            "#f8d7da"
+                        else
+                            "#fff"
+                      )
+                    ]
+                ]
+            )
         |> FileList.rowActions
             (\attachment ->
                 if isCurrentlyTagging attachment uploadedFiles then
@@ -393,7 +443,9 @@ fileListConfig uploadedFiles =
                     Just <|
                         div []
                             [ select
-                                [ on "change" decoder ]
+                                [ class "form-input"
+                                , on "change" decoder
+                                ]
                                 (List.map
                                     (\t ->
                                         option
@@ -409,7 +461,9 @@ fileListConfig uploadedFiles =
                                     tags
                                 )
                             , button
-                                [ onClick (ToggleFileTagging attachment) ]
+                                [ class "btn btn-link"
+                                , onClick (ToggleFileTagging attachment)
+                                ]
                                 [ text "Close" ]
                             ]
                 else
@@ -418,52 +472,73 @@ fileListConfig uploadedFiles =
         |> FileList.column
             { id = UploadedOn
             , label = "Uploaded on"
-            , html = Tuple.first >> .uploadedAt >> Date.Extra.toFormattedString "d MMM YYY HH:mm" >> text
-            , sorter = \a b -> Date.Extra.compare a.uploadedAt b.uploadedAt
+            , html = ifNotSoftDeleting (Tuple.first >> .uploadedAt >> Date.Extra.toFormattedString "d MMM YYY HH:mm" >> text)
+            , sorter = Just <| \a b -> Date.Extra.compare a.uploadedAt b.uploadedAt
             }
         |> FileList.column
             { id = UploadedBy
             , label = "Uploaded by"
-            , html = Tuple.first >> .uploadedBy >> text
-            , sorter = \a b -> compare a.uploadedBy b.uploadedBy
+            , html = ifNotSoftDeleting (Tuple.first >> .uploadedBy >> text)
+            , sorter = Just <| \a b -> compare a.uploadedBy b.uploadedBy
             }
         |> FileList.column
             { id = Tags
             , label = "Tag"
             , html =
-                \( attachment, isSelected ) ->
-                    case attachment.tag of
-                        Just tag ->
-                            span
-                                []
-                                [ text tag
-                                , button [ onClick (SetTag attachment Nothing) ] [ text "Remove tag" ]
-                                ]
+                ifNotSoftDeleting
+                    (\( attachment, isSelected ) ->
+                        case attachment.tag of
+                            Just tag ->
+                                div [ class "badge badge-secondary" ]
+                                    [ text tag
+                                    , button
+                                        [ class "btn btn-sm btn-link p-0 ml-1"
+                                        , onClick (SetTag attachment Nothing)
+                                        ]
+                                        [ span [ class "text-white" ] [ text "×" ]
+                                        ]
+                                    ]
 
-                        Nothing ->
-                            button
-                                [ onClick (ToggleFileTagging attachment) ]
-                                [ text
-                                    (if isCurrentlyTagging attachment uploadedFiles then
-                                        "..."
-                                     else
-                                        "Add tag"
-                                    )
-                                ]
+                            Nothing ->
+                                button
+                                    [ class "btn btn-link "
+                                    , onClick (ToggleFileTagging attachment)
+                                    ]
+                                    [ text
+                                        (if isCurrentlyTagging attachment uploadedFiles then
+                                            "Cancel"
+                                         else
+                                            "Add tag"
+                                        )
+                                    ]
+                    )
             , sorter =
-                \a b ->
-                    case ( a.tag, b.tag ) of
-                        ( Just a, Just b ) ->
-                            compare a b
+                Just <|
+                    \a b ->
+                        case ( a.tag, b.tag ) of
+                            ( Just a, Just b ) ->
+                                compare a b
 
-                        ( Just a, Nothing ) ->
-                            compare 1 2
+                            ( Just a, Nothing ) ->
+                                compare 1 2
 
-                        ( Nothing, Just b ) ->
-                            compare 2 1
+                            ( Nothing, Just b ) ->
+                                compare 2 1
 
-                        ( Nothing, Nothing ) ->
-                            compare 1 1
+                            ( Nothing, Nothing ) ->
+                                compare 1 1
+            }
+        |> FileList.column
+            { id = Delete
+            , label = "Delete"
+            , html =
+                \( attachment, _ ) ->
+                    button
+                        [ onClick (SoftDelete (not attachment.softDeleting) attachment)
+                        , class "btn btn-outline-danger"
+                        ]
+                        [ text "Delete" ]
+            , sorter = Nothing
             }
 
 
@@ -474,14 +549,15 @@ view { upload, files, list } =
             List.map (\(Taggable _ attachment) -> attachment) files
     in
     div
-        [ style
-            [ ( "width", "700px" )
-            , ( "border", "1px solid #000" )
+        [ class "container my-4" ]
+        [ div [ class "row" ]
+            [ div [ class "col card" ]
+                [ Upload.view upload uploadConfig ]
             ]
-        ]
-        [ Upload.view upload uploadConfig
-        , hr [] []
-        , FileList.view list upload attachments (fileListConfig files)
+        , div [ class "row mt-4" ]
+            [ div [ class "col card" ]
+                [ FileList.view list upload attachments (fileListConfig files) ]
+            ]
         ]
 
 
@@ -497,6 +573,16 @@ base64EncodeFileSub upload =
 fileUploadedSub : Sub Msg
 fileUploadedSub =
     Upload.uploaded (Decode.decodeValue UploadId.decoder >> UploadedFile)
+
+
+fileFailureSub : Sub Msg
+fileFailureSub =
+    Upload.uploadFailed
+        (Decode.decodeValue UploadId.decoder
+            >> Result.toMaybe
+            >> Maybe.map UploadFailed
+            >> Maybe.withDefault NoOp
+        )
 
 
 fileUploadProgressSub : Sub Msg
@@ -517,5 +603,6 @@ subscriptions { upload } =
     Sub.batch
         [ Sub.map Base64EncodedFile (base64EncodeFileSub upload)
         , fileUploadedSub
+        , fileFailureSub
         , fileUploadProgressSub
         ]

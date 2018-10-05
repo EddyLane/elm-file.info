@@ -52,7 +52,8 @@ app.post('/signed-upload-url', ({body: {contentType, fileName}}, res) => {
         fileName,
         tag: null,
         contentType,
-        date: new Date
+        date: new Date,
+        softDeleting: false
     };
 
     fileId++;
@@ -82,12 +83,15 @@ app.put('/attachments/:reference', ({ body, params: { reference }}, res) => {
 
     if (Object.keys(files).indexOf(reference) !== -1) {
         files[reference] = body;
+        res.json(body);
+    } else {
+        res.status(404);
+        res.send("Unknown file reference");
     }
 
-    res.json(body);
 });
 
-app.get('/download/:reference', ({params: {reference}}, res) => {
+app.get('/attachments/:reference', ({params: {reference}}, res) => {
 
     const file = files[reference];
 
