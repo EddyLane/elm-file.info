@@ -28,7 +28,6 @@ port module File.Upload
         , updateS3UploadProgress
         , uploadCancelled
         , uploadFailed
-          --        , uploadFileToSignedUrl
         , uploadPercentage
         , uploadProgress
         , uploadToUrl
@@ -148,7 +147,7 @@ type UploadingFile
 
 type UploadStatus
     = ReadingBase64
-    | UploadingToS3 Base64Encoded Float
+    | Uploading Base64Encoded Float
     | Failed
 
 
@@ -317,7 +316,7 @@ isImage (UploadingFile { typeMIME } _) =
 uploadPercentage : UploadingFile -> Float
 uploadPercentage file =
     case file of
-        UploadingFile _ (UploadingToS3 _ percentage) ->
+        UploadingFile _ (Uploading _ percentage) ->
             percentage
 
         _ ->
@@ -332,7 +331,7 @@ base64EncodedData (UploadingFile file status) =
         ReadingBase64 ->
             Nothing
 
-        UploadingToS3 base64Encoded _ ->
+        Uploading base64Encoded _ ->
             Just base64Encoded
 
         Failed ->
@@ -405,7 +404,7 @@ updateFileState uploadId file (State state) =
 uploadToUrl : Encode.Value -> Encode.Value -> UploadId -> State -> Cmd msg
 uploadToUrl uploadUrl additionalData uploadId (State state) =
     case UploadId.get uploadId state.uploads of
-        Just (UploadingFile rawFile (UploadingToS3 base64 _)) ->
+        Just (UploadingFile rawFile (Uploading base64 _)) ->
             upload
                 ( UploadId.encoder uploadId
                 , uploadUrl
@@ -417,37 +416,7 @@ uploadToUrl uploadUrl additionalData uploadId (State state) =
             Cmd.none
 
 
-{-| Updates the state of a particular file specified by UploadId with the SignedUrl from the backend.
 
-Returns the new state with the file uploading, and a Cmd to send to JS-land to upload it.
-
--}
-
-
-
---uploadFileToSignedUrl : SignedUrl -> file -> UploadId -> State file -> ( State file, Cmd msg )
---uploadFileToSignedUrl signedUrl backendFile uploadId (State state) =
---    let
---        ( uploads, cmd ) =
---            case UploadId.get uploadId state.uploads of
---                Just (UploadingFile rawFile (GettingSignedS3Url base64)) ->
---                    let
---                        uploadingFile =
---                            UploadingFile rawFile (UploadingToS3 base64 signedUrl 0.0 backendFile)
---                    in
---                    ( UploadId.update uploadId (always (Just uploadingFile)) state.uploads
---                    , uploadCmds [ ( uploadId, uploadingFile ) ]
---                    )
---
---                _ ->
---                    ( state.uploads
---                    , Cmd.none
---                    )
---    in
---    ( State <|
---        { state | uploads = uploads }
---    , cmd
---    )
 --{-| Removes a particular uploading file when the data has been successfully uploaded to the end destination
 --
 --Returns both the new state of the uploader and the file that has been uploaded
@@ -486,8 +455,8 @@ updateS3UploadProgress id progress (State state) =
                     (Maybe.map
                         (\upload ->
                             case upload of
-                                UploadingFile rawFile (UploadingToS3 base64 _) ->
-                                    UploadingFile rawFile (UploadingToS3 base64 progress)
+                                UploadingFile rawFile (Uploading base64 _) ->
+                                    UploadingFile rawFile (Uploading base64 progress)
 
                                 _ ->
                                     upload
@@ -606,7 +575,7 @@ base64PortDecoder (State { uploads }) =
             (\requestId ->
                 case UploadId.get requestId uploads of
                     Just (UploadingFile rawFile _) ->
-                        Pipeline.decode (\base64 -> UploadingToS3 base64 0.0)
+                        Pipeline.decode (\base64 -> Uploading base64 0.0)
                             |> Pipeline.required "result" Base64Encoded.decoder
                             |> Decode.andThen (UploadingFile rawFile >> (,) requestId >> Decode.succeed)
 
