@@ -15,9 +15,8 @@ port module File.Upload
         , dropzoneAttrs
         , fileContentRead
         , fileName
-        , fileReadSuccess
         , fileUploadFailure
-          --        , fileUploadSuccess
+        , fileUploadSuccess
         , init
         , inputId
         , isFailed
@@ -25,12 +24,14 @@ port module File.Upload
         , maximumFileSize
         , onChangeFiles
         , signedUrlMetadataEncoder
+        , updateFileState
         , updateS3UploadProgress
         , uploadCancelled
         , uploadFailed
           --        , uploadFileToSignedUrl
         , uploadPercentage
         , uploadProgress
+        , uploadToUrl
         , uploaded
         , uploads
         , view
@@ -124,7 +125,7 @@ The encode values are:
   - Base64Encoded
 
 -}
-port upload : ( Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
+port upload : ( Encode.Value, Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
 
 
 {-| A port used to tell the internal state that an upload has failed, and to update accordingly}
@@ -134,7 +135,7 @@ port uploadFailed : (Encode.Value -> msg) -> Sub msg
 
 {-| A port used to tell the internal state that the file has been successfully uploaded
 -}
-port uploaded : (Encode.Value -> msg) -> Sub msg
+port uploaded : (( Encode.Value, Encode.Value ) -> msg) -> Sub msg
 
 
 
@@ -394,12 +395,26 @@ readCmds uploadIds collection =
         |> Cmd.batch
 
 
+updateFileState : UploadId -> UploadingFile -> State -> State
+updateFileState uploadId file (State state) =
+    State { state | uploads = UploadId.update uploadId (always <| Just file) state.uploads }
+
+
 {-| Updates a particular uploading file when it the base64 data has been successfully read from JS-land
 -}
-fileReadSuccess : UploadId -> UploadingFile -> State -> State
-fileReadSuccess uploadId file (State state) =
-    State <|
-        { state | uploads = UploadId.update uploadId (always (Just file)) state.uploads }
+uploadToUrl : Encode.Value -> Encode.Value -> UploadId -> State -> Cmd msg
+uploadToUrl uploadUrl additionalData uploadId (State state) =
+    case UploadId.get uploadId state.uploads of
+        Just (UploadingFile rawFile (UploadingToS3 base64 _)) ->
+            upload
+                ( UploadId.encoder uploadId
+                , uploadUrl
+                , Base64Encoded.encoder base64
+                , additionalData
+                )
+
+        _ ->
+            Cmd.none
 
 
 {-| Updates the state of a particular file specified by UploadId with the SignedUrl from the backend.
@@ -433,55 +448,16 @@ Returns the new state with the file uploading, and a Cmd to send to JS-land to u
 --        { state | uploads = uploads }
 --    , cmd
 --    )
-
-
-uploadCmds : List ( UploadId, UploadingFile ) -> Cmd msg
-uploadCmds files =
-    files
-        |> List.map
-            (\( id, uploadingFile ) ->
-                case uploadingFile of
-                    UploadingFile _ (UploadingToS3 base64 _) ->
-                        upload
-                            ( UploadId.encoder id
-                            , Encode.string "test-url"
-                            , Base64Encoded.encoder base64
-                            )
-
-                    _ ->
-                        Cmd.none
-            )
-        |> Cmd.batch
-
-
-
 --{-| Removes a particular uploading file when the data has been successfully uploaded to the end destination
 --
 --Returns both the new state of the uploader and the file that has been uploaded
 --
 ---}
---fileUploadSuccess : UploadId -> State file -> ( State file, Maybe file )
---fileUploadSuccess requestId (State state) =
---    let
---        maybeFile =
---            state.uploads
---                |> UploadId.get requestId
---                |> Maybe.andThen
---                    (\file ->
---                        case file of
---                            UploadingFile _ (UploadingToS3 _ _) ->
---                                Just file
---
---                            _ ->
---                                Nothing
---                    )
---
---        uploads =
---            UploadId.remove requestId state.uploads
---    in
---    ( State { state | uploads = uploads }
---    , maybeFile
---    )
+
+
+fileUploadSuccess : UploadId -> State -> State
+fileUploadSuccess uploadId (State state) =
+    State { state | uploads = UploadId.remove uploadId state.uploads }
 
 
 fileUploadFailure : UploadId -> State -> State

@@ -60,6 +60,7 @@ loadAttachments : Task Http.Error (List (Taggable Attachment))
 loadAttachments =
     Http.get getAttachmentsUrl (Decode.list attachmentDecoder)
         |> Http.toTask
+        |> Task.andThen (List.map (Taggable False) >> Task.succeed)
 
 
 
@@ -74,7 +75,7 @@ type Taggable a
 
 
 type alias AttachmentResponse =
-    { attachment : Taggable Attachment
+    { attachment : Attachment
     , signedUrl : SignedUrl
     }
 
@@ -91,7 +92,7 @@ type alias Attachment =
     }
 
 
-attachmentDecoder : Decode.Decoder (Taggable Attachment)
+attachmentDecoder : Decode.Decoder Attachment
 attachmentDecoder =
     Decode.field "date" Decode.string
         |> Decode.andThen
@@ -106,7 +107,6 @@ attachmentDecoder =
                             |> Pipeline.required "uploadedBy" Decode.string
                             |> Pipeline.required "tag" (Decode.nullable Decode.string)
                             |> Pipeline.required "softDeleting" Decode.bool
-                            |> Decode.andThen (Taggable False >> Decode.succeed)
 
                     Err _ ->
                         Decode.fail "Could not parse date"
@@ -144,7 +144,7 @@ type Msg
     | DragFilesLeave Drag.Event
     | DropFiles Drag.Event
     | GotSignedS3Url UploadId (Result Http.Error AttachmentResponse)
-    | UploadedFile (Result String UploadId)
+    | UploadedFile (Result String ( UploadId, Attachment ))
     | UploadFailed UploadId
     | UploadProgress UploadId Float
     | CancelUpload UploadId
@@ -196,7 +196,7 @@ update msg model =
             )
 
         Base64EncodedFile (Ok ( id, file )) ->
-            ( { model | upload = Upload.fileReadSuccess id file model.upload }
+            ( { model | upload = Upload.updateFileState id file model.upload }
             , Task.attempt (GotSignedS3Url id) (getSignedUrl file)
             )
 
@@ -206,18 +206,10 @@ update msg model =
             )
 
         GotSignedS3Url uploadId (Ok { attachment, signedUrl }) ->
-            ( model, Cmd.none )
+            ( model
+            , Upload.uploadToUrl (SignedUrl.encoder signedUrl) (attachmentEncoder attachment) uploadId model.upload
+            )
 
-        --            let
-        --                (Taggable _ rawAttachment) =
-        --                    attachment
-        --
-        --                ( upload, uploadCmd ) =
-        --                    Upload.uploadFileToSignedUrl signedUrl rawAttachment uploadId model.upload
-        --            in
-        --            ( { model | upload = upload }
-        --            , uploadCmd
-        --            )
         GotSignedS3Url uploadId (Err e) ->
             ( { model | upload = Upload.fileUploadFailure uploadId model.upload }
             , Cmd.none
@@ -242,24 +234,14 @@ update msg model =
             , Cmd.none
             )
 
-        UploadedFile (Ok requestId) ->
-            ( model, Cmd.none )
+        UploadedFile (Ok ( uploadId, attachment )) ->
+            ( { model
+                | upload = Upload.fileUploadSuccess uploadId model.upload
+                , files = Taggable False attachment :: model.files
+              }
+            , Cmd.none
+            )
 
-        --            let
-        --                ( upload, maybeAttachment ) =
-        --                    Upload.fileUploadSuccess requestId model.upload
-        --
-        --                files =
-        --                    maybeAttachment
-        --                        |> Maybe.map (\attachment -> Taggable False attachment :: model.files)
-        --                        |> Maybe.withDefault model.files
-        --            in
-        --            ( { model
-        --                | upload = upload
-        --                , files = files
-        --              }
-        --            , Cmd.none
-        --            )
         UploadedFile (Err e) ->
             ( model
             , Cmd.none
@@ -638,7 +620,17 @@ base64EncodeFileSub upload =
 
 fileUploadedSub : Sub Msg
 fileUploadedSub =
-    Upload.uploaded (Decode.decodeValue UploadId.decoder >> UploadedFile)
+    Upload.uploaded
+        (\( encodedId, encodedAttachment ) ->
+            let
+                id =
+                    Decode.decodeValue UploadId.decoder encodedId
+
+                attachment =
+                    Decode.decodeValue attachmentDecoder encodedAttachment
+            in
+            UploadedFile (Result.map2 (,) id attachment)
+        )
 
 
 fileFailureSub : Sub Msg

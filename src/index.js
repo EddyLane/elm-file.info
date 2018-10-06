@@ -25,7 +25,7 @@ app.ports.readFileContent.subscribe(([id, file]) => {
 });
 
 
-app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
+app.ports.upload.subscribe(([id, signedUrl, base64Data, additionalData]) => {
 
     console.info(`PORT: Upload started to ${signedUrl} (${id})`);
 
@@ -54,7 +54,7 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
 
             uploadRequest.onload = () => {
                 console.info(`PORT: Upload success (${id})`);
-                app.ports.uploaded.send(id);
+                app.ports.uploaded.send([id, additionalData]);
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
 
