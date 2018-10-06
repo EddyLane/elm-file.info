@@ -37,7 +37,7 @@ attachmentUrl { reference } =
 
 
 type alias Model =
-    { upload : Upload.State Attachment
+    { upload : Upload.State
     , list : FileList.State ColumnId
     , files : List (Taggable Attachment)
     }
@@ -139,7 +139,7 @@ type Msg
     = NoOp
     | OpenFileBrowser String
     | InputFiles String (List Drag.File)
-    | Base64EncodedFile (Result String ( UploadId, Upload.UploadingFile Attachment ))
+    | Base64EncodedFile (Result String ( UploadId, Upload.UploadingFile ))
     | DragFilesOver Drag.Event
     | DragFilesLeave Drag.Event
     | DropFiles Drag.Event
@@ -206,17 +206,18 @@ update msg model =
             )
 
         GotSignedS3Url uploadId (Ok { attachment, signedUrl }) ->
-            let
-                (Taggable _ rawAttachment) =
-                    attachment
+            ( model, Cmd.none )
 
-                ( upload, uploadCmd ) =
-                    Upload.uploadFileToSignedUrl signedUrl rawAttachment uploadId model.upload
-            in
-            ( { model | upload = upload }
-            , uploadCmd
-            )
-
+        --            let
+        --                (Taggable _ rawAttachment) =
+        --                    attachment
+        --
+        --                ( upload, uploadCmd ) =
+        --                    Upload.uploadFileToSignedUrl signedUrl rawAttachment uploadId model.upload
+        --            in
+        --            ( { model | upload = upload }
+        --            , uploadCmd
+        --            )
         GotSignedS3Url uploadId (Err e) ->
             ( { model | upload = Upload.fileUploadFailure uploadId model.upload }
             , Cmd.none
@@ -242,22 +243,23 @@ update msg model =
             )
 
         UploadedFile (Ok requestId) ->
-            let
-                ( upload, maybeAttachment ) =
-                    Upload.fileUploadSuccess requestId model.upload
+            ( model, Cmd.none )
 
-                files =
-                    maybeAttachment
-                        |> Maybe.map (\attachment -> Taggable False attachment :: model.files)
-                        |> Maybe.withDefault model.files
-            in
-            ( { model
-                | upload = upload
-                , files = files
-              }
-            , Cmd.none
-            )
-
+        --            let
+        --                ( upload, maybeAttachment ) =
+        --                    Upload.fileUploadSuccess requestId model.upload
+        --
+        --                files =
+        --                    maybeAttachment
+        --                        |> Maybe.map (\attachment -> Taggable False attachment :: model.files)
+        --                        |> Maybe.withDefault model.files
+        --            in
+        --            ( { model
+        --                | upload = upload
+        --                , files = files
+        --              }
+        --            , Cmd.none
+        --            )
         UploadedFile (Err e) ->
             ( model
             , Cmd.none
@@ -337,7 +339,7 @@ update msg model =
             ( model, Cmd.none )
 
 
-getSignedUrl : Upload.UploadingFile file -> Task Http.Error AttachmentResponse
+getSignedUrl : Upload.UploadingFile -> Task Http.Error AttachmentResponse
 getSignedUrl file =
     Http.post signedUrlProviderUrl
         (Http.jsonBody <| Upload.signedUrlMetadataEncoder file)
@@ -629,7 +631,7 @@ view { upload, files, list } =
 ---- SUBSCRIPTIONS ----
 
 
-base64EncodeFileSub : Upload.State file -> Sub (Result String ( UploadId, Upload.UploadingFile file ))
+base64EncodeFileSub : Upload.State -> Sub (Result String ( UploadId, Upload.UploadingFile ))
 base64EncodeFileSub upload =
     Upload.fileContentRead (Decode.decodeValue <| Upload.base64PortDecoder upload)
 

@@ -17,7 +17,7 @@ port module File.Upload
         , fileName
         , fileReadSuccess
         , fileUploadFailure
-        , fileUploadSuccess
+          --        , fileUploadSuccess
         , init
         , inputId
         , isFailed
@@ -28,7 +28,7 @@ port module File.Upload
         , updateS3UploadProgress
         , uploadCancelled
         , uploadFailed
-        , uploadFileToSignedUrl
+          --        , uploadFileToSignedUrl
         , uploadPercentage
         , uploadProgress
         , uploaded
@@ -73,9 +73,10 @@ When you need to create an uploader you first need to init the state:
 
 -}
 
+--import File.Data.SignedUrl as SignedUrl exposing (SignedUrl)
+
 import Drag
 import File.Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
-import File.Data.SignedUrl as SignedUrl exposing (SignedUrl)
 import File.Data.UploadId as UploadId exposing (UploadId)
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -140,19 +141,18 @@ port uploaded : (Encode.Value -> msg) -> Sub msg
 ---- STATE ----
 
 
-type UploadingFile file
-    = UploadingFile Drag.File (UploadStatus file)
+type UploadingFile
+    = UploadingFile Drag.File UploadStatus
 
 
-type UploadStatus file
+type UploadStatus
     = ReadingBase64
-    | GettingSignedS3Url Base64Encoded
-    | UploadingToS3 Base64Encoded SignedUrl Float file
+    | UploadingToS3 Base64Encoded Float
     | Failed
 
 
-type State file
-    = State (StateRec file)
+type State
+    = State StateRec
 
 
 {-| State used to represent this uploader
@@ -161,13 +161,13 @@ type State file
     - `uploads` Is the current collection of uploading files
 
 -}
-type alias StateRec file =
+type alias StateRec =
     { dropActive : Bool
-    , uploads : UploadId.Collection (UploadingFile file)
+    , uploads : UploadId.Collection UploadingFile
     }
 
 
-uploads : State file -> UploadId.Collection (UploadingFile file)
+uploads : State -> UploadId.Collection UploadingFile
 uploads (State { uploads }) =
     uploads
 
@@ -205,7 +205,7 @@ type alias ConfigRec msg =
 
 {-| Init the uploader
 -}
-init : State file
+init : State
 init =
     State <|
         { dropActive = False
@@ -287,14 +287,14 @@ maximumFileSize size (Config configRec) =
 
 {-| Get the filename for an uploading file
 -}
-fileName : UploadingFile file -> String
+fileName : UploadingFile -> String
 fileName (UploadingFile { name } _) =
     name
 
 
 {-| Is the upload failed?
 -}
-isFailed : UploadingFile file -> Bool
+isFailed : UploadingFile -> Bool
 isFailed (UploadingFile _ uploadState) =
     case uploadState of
         Failed ->
@@ -306,17 +306,17 @@ isFailed (UploadingFile _ uploadState) =
 
 {-| Is the uploading file an image?
 -}
-isImage : UploadingFile file -> Bool
+isImage : UploadingFile -> Bool
 isImage (UploadingFile { typeMIME } _) =
     String.startsWith "image" typeMIME
 
 
 {-| Get the percentage that the uploading file has uploaded
 -}
-uploadPercentage : UploadingFile file -> Float
+uploadPercentage : UploadingFile -> Float
 uploadPercentage file =
     case file of
-        UploadingFile _ (UploadingToS3 _ _ percentage _) ->
+        UploadingFile _ (UploadingToS3 _ percentage) ->
             percentage
 
         _ ->
@@ -325,16 +325,13 @@ uploadPercentage file =
 
 {-| Get the base64 data for an uploading file, if ready.
 -}
-base64EncodedData : UploadingFile file -> Maybe Base64Encoded
+base64EncodedData : UploadingFile -> Maybe Base64Encoded
 base64EncodedData (UploadingFile file status) =
     case status of
         ReadingBase64 ->
             Nothing
 
-        GettingSignedS3Url base64Encoded ->
-            Just base64Encoded
-
-        UploadingToS3 base64Encoded _ _ _ ->
+        UploadingToS3 base64Encoded _ ->
             Just base64Encoded
 
         Failed ->
@@ -347,14 +344,14 @@ base64EncodedData (UploadingFile file status) =
 
 {-| Update the active state of the drop zone
 -}
-dropActive : Bool -> State file -> State file
+dropActive : Bool -> State -> State
 dropActive isActive (State state) =
     State { state | dropActive = isActive }
 
 
 {-| Start a list of files uploading. Returns tuple with state of the uploader with the new files and Cmds for ports
 -}
-base64EncodeFiles : List Drag.File -> State file -> ( State file, Cmd msg )
+base64EncodeFiles : List Drag.File -> State -> ( State, Cmd msg )
 base64EncodeFiles files (State state) =
     let
         ( updatedUploadCollection, insertedIds ) =
@@ -380,7 +377,7 @@ base64EncodeFiles files (State state) =
     )
 
 
-readCmds : List UploadId -> UploadId.Collection (UploadingFile file) -> Cmd msg
+readCmds : List UploadId -> UploadId.Collection UploadingFile -> Cmd msg
 readCmds uploadIds collection =
     uploadIds
         |> Debug.log "ids"
@@ -399,7 +396,7 @@ readCmds uploadIds collection =
 
 {-| Updates a particular uploading file when it the base64 data has been successfully read from JS-land
 -}
-fileReadSuccess : UploadId -> UploadingFile file -> State file -> State file
+fileReadSuccess : UploadId -> UploadingFile -> State -> State
 fileReadSuccess uploadId file (State state) =
     State <|
         { state | uploads = UploadId.update uploadId (always (Just file)) state.uploads }
@@ -410,41 +407,44 @@ fileReadSuccess uploadId file (State state) =
 Returns the new state with the file uploading, and a Cmd to send to JS-land to upload it.
 
 -}
-uploadFileToSignedUrl : SignedUrl -> file -> UploadId -> State file -> ( State file, Cmd msg )
-uploadFileToSignedUrl signedUrl backendFile uploadId (State state) =
-    let
-        ( uploads, cmd ) =
-            case UploadId.get uploadId state.uploads of
-                Just (UploadingFile rawFile (GettingSignedS3Url base64)) ->
-                    let
-                        uploadingFile =
-                            UploadingFile rawFile (UploadingToS3 base64 signedUrl 0.0 backendFile)
-                    in
-                    ( UploadId.update uploadId (always (Just uploadingFile)) state.uploads
-                    , uploadCmds [ ( uploadId, uploadingFile ) ]
-                    )
-
-                _ ->
-                    ( state.uploads
-                    , Cmd.none
-                    )
-    in
-    ( State <|
-        { state | uploads = uploads }
-    , cmd
-    )
 
 
-uploadCmds : List ( UploadId, UploadingFile file ) -> Cmd msg
+
+--uploadFileToSignedUrl : SignedUrl -> file -> UploadId -> State file -> ( State file, Cmd msg )
+--uploadFileToSignedUrl signedUrl backendFile uploadId (State state) =
+--    let
+--        ( uploads, cmd ) =
+--            case UploadId.get uploadId state.uploads of
+--                Just (UploadingFile rawFile (GettingSignedS3Url base64)) ->
+--                    let
+--                        uploadingFile =
+--                            UploadingFile rawFile (UploadingToS3 base64 signedUrl 0.0 backendFile)
+--                    in
+--                    ( UploadId.update uploadId (always (Just uploadingFile)) state.uploads
+--                    , uploadCmds [ ( uploadId, uploadingFile ) ]
+--                    )
+--
+--                _ ->
+--                    ( state.uploads
+--                    , Cmd.none
+--                    )
+--    in
+--    ( State <|
+--        { state | uploads = uploads }
+--    , cmd
+--    )
+
+
+uploadCmds : List ( UploadId, UploadingFile ) -> Cmd msg
 uploadCmds files =
     files
         |> List.map
             (\( id, uploadingFile ) ->
                 case uploadingFile of
-                    UploadingFile _ (UploadingToS3 base64 signedUrl _ _) ->
+                    UploadingFile _ (UploadingToS3 base64 _) ->
                         upload
                             ( UploadId.encoder id
-                            , SignedUrl.encoder signedUrl
+                            , Encode.string "test-url"
                             , Base64Encoded.encoder base64
                             )
 
@@ -454,36 +454,37 @@ uploadCmds files =
         |> Cmd.batch
 
 
-{-| Removes a particular uploading file when the data has been successfully uploaded to the end destination
 
-Returns both the new state of the uploader and the file that has been uploaded
+--{-| Removes a particular uploading file when the data has been successfully uploaded to the end destination
+--
+--Returns both the new state of the uploader and the file that has been uploaded
+--
+---}
+--fileUploadSuccess : UploadId -> State file -> ( State file, Maybe file )
+--fileUploadSuccess requestId (State state) =
+--    let
+--        maybeFile =
+--            state.uploads
+--                |> UploadId.get requestId
+--                |> Maybe.andThen
+--                    (\file ->
+--                        case file of
+--                            UploadingFile _ (UploadingToS3 _ _) ->
+--                                Just file
+--
+--                            _ ->
+--                                Nothing
+--                    )
+--
+--        uploads =
+--            UploadId.remove requestId state.uploads
+--    in
+--    ( State { state | uploads = uploads }
+--    , maybeFile
+--    )
 
--}
-fileUploadSuccess : UploadId -> State file -> ( State file, Maybe file )
-fileUploadSuccess requestId (State state) =
-    let
-        maybeFile =
-            state.uploads
-                |> UploadId.get requestId
-                |> Maybe.andThen
-                    (\file ->
-                        case file of
-                            UploadingFile _ (UploadingToS3 _ _ _ file) ->
-                                Just file
 
-                            _ ->
-                                Nothing
-                    )
-
-        uploads =
-            UploadId.remove requestId state.uploads
-    in
-    ( State { state | uploads = uploads }
-    , maybeFile
-    )
-
-
-fileUploadFailure : UploadId -> State file -> State file
+fileUploadFailure : UploadId -> State -> State
 fileUploadFailure requestId (State state) =
     State <|
         { state
@@ -500,7 +501,7 @@ fileUploadFailure requestId (State state) =
 
 {-| Updates the progress of an upload to S3 from JS-land with a new percentage
 -}
-updateS3UploadProgress : UploadId -> Float -> State file -> State file
+updateS3UploadProgress : UploadId -> Float -> State -> State
 updateS3UploadProgress id progress (State state) =
     State <|
         { state
@@ -509,8 +510,8 @@ updateS3UploadProgress id progress (State state) =
                     (Maybe.map
                         (\upload ->
                             case upload of
-                                UploadingFile rawFile (UploadingToS3 base64 signedUrl _ backendFile) ->
-                                    UploadingFile rawFile (UploadingToS3 base64 signedUrl progress backendFile)
+                                UploadingFile rawFile (UploadingToS3 base64 _) ->
+                                    UploadingFile rawFile (UploadingToS3 base64 progress)
 
                                 _ ->
                                     upload
@@ -527,7 +528,7 @@ Returns a tuple with:
   - Cmds to cancel both the upload and any artifacts created during the upload process
 
 -}
-cancelUpload : UploadId -> State file -> ( State file, Cmd msg )
+cancelUpload : UploadId -> State -> ( State, Cmd msg )
 cancelUpload uploadId (State state) =
     ( State { state | uploads = UploadId.remove uploadId state.uploads }
     , uploadCancelled (UploadId.encoder uploadId)
@@ -538,7 +539,7 @@ cancelUpload uploadId (State state) =
 ---- VIEW ----
 
 
-view : State file -> Config msg -> Html msg
+view : State -> Config msg -> Html msg
 view (State state) (Config config) =
     div config.dropZoneAttrs
         [ dropZone state config
@@ -546,7 +547,7 @@ view (State state) (Config config) =
         ]
 
 
-dropZone : StateRec file -> ConfigRec msg -> Html msg
+dropZone : StateRec -> ConfigRec msg -> Html msg
 dropZone state config =
     div
         [ style
@@ -613,7 +614,7 @@ fileInputDecoder inputId msg =
 ---- ENCODER ----
 
 
-signedUrlMetadataEncoder : UploadingFile file -> Encode.Value
+signedUrlMetadataEncoder : UploadingFile -> Encode.Value
 signedUrlMetadataEncoder (UploadingFile { typeMIME, name, size } _) =
     Encode.object
         [ ( "contentType", Encode.string typeMIME )
@@ -622,14 +623,14 @@ signedUrlMetadataEncoder (UploadingFile { typeMIME, name, size } _) =
         ]
 
 
-base64PortDecoder : State file -> Decode.Decoder ( UploadId, UploadingFile file )
+base64PortDecoder : State -> Decode.Decoder ( UploadId, UploadingFile )
 base64PortDecoder (State { uploads }) =
     Decode.field "id" UploadId.decoder
         |> Decode.andThen
             (\requestId ->
                 case UploadId.get requestId uploads of
                     Just (UploadingFile rawFile _) ->
-                        Pipeline.decode GettingSignedS3Url
+                        Pipeline.decode (\base64 -> UploadingToS3 base64 0.0)
                             |> Pipeline.required "result" Base64Encoded.decoder
                             |> Decode.andThen (UploadingFile rawFile >> (,) requestId >> Decode.succeed)
 

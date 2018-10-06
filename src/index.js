@@ -32,6 +32,7 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data]) => {
     fetch(base64Data)
         .catch(() => {
             console.error(`PORT: Upload failure (${id})`);
+            app.ports.uploadFailed.send(id);
         })
         .then(res => res.blob())
         .then((blob) => {

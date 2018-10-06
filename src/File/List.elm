@@ -35,7 +35,7 @@ import Set exposing (Set)
 
 
 type UploadState file
-    = Uploading UploadId (UploadingFile file)
+    = Uploading UploadId UploadingFile
     | Uploaded file
 
 
@@ -60,7 +60,7 @@ type alias ConfigRec colId file msg =
     , defaultSortDir : SortDirection
     , rowActions : file -> Maybe (Html msg)
     , uploadedRowAttrs : file -> List (Attribute msg)
-    , failedRowAttrs : UploadingFile file -> List (Attribute msg)
+    , failedRowAttrs : UploadingFile -> List (Attribute msg)
     , disabled : file -> Bool
     , fileIcon : String -> Html msg
     , multiSelectEnabled : Bool
@@ -160,7 +160,7 @@ uploadedRowAttrs uploadedRowAttrs (Config configRec) =
         { configRec | uploadedRowAttrs = uploadedRowAttrs }
 
 
-failedRowAttrs : (UploadingFile file -> List (Attribute msg)) -> Config colId file msg -> Config colId file msg
+failedRowAttrs : (UploadingFile -> List (Attribute msg)) -> Config colId file msg -> Config colId file msg
 failedRowAttrs failedRowAttrs (Config configRec) =
     Config <|
         { configRec | failedRowAttrs = failedRowAttrs }
@@ -236,7 +236,7 @@ multiSelectEnabled enabled (Config configRec) =
 ---- VIEW ----
 
 
-view : State colId -> Upload.State file -> List file -> Config colId file msg -> Html msg
+view : State colId -> Upload.State -> List file -> Config colId file msg -> Html msg
 view ((State { direction, sortColumn, selectedIds }) as state) upload files ((Config { idFn }) as config) =
     table [ class "table table-sm mb-0" ]
         [ viewTableHeader state config files
@@ -435,7 +435,7 @@ viewListSorterState column (State state) =
         }
 
 
-combineUploadsWithFiles : List file -> UploadId.Collection (Upload.UploadingFile file) -> List (UploadState file)
+combineUploadsWithFiles : List file -> UploadId.Collection Upload.UploadingFile -> List (UploadState file)
 combineUploadsWithFiles files uploads =
     List.concat
         [ List.map (uncurry Uploading) <| UploadId.toList uploads
@@ -471,7 +471,7 @@ viewRow ((Config { idFn, rowActions, columns, uploadedRowAttrs }) as config) sta
             ]
 
 
-viewUploadingRow : Config colId file msg -> UploadId -> UploadingFile file -> Html msg
+viewUploadingRow : Config colId file msg -> UploadId -> UploadingFile -> Html msg
 viewUploadingRow (Config { cancelUploadMsg, columns, uploadedRowAttrs }) uploadId file =
     let
         percentString =
@@ -499,7 +499,7 @@ viewUploadingRow (Config { cancelUploadMsg, columns, uploadedRowAttrs }) uploadI
         ]
 
 
-viewFailedRow : Config colId file msg -> UploadId -> UploadingFile file -> Html msg
+viewFailedRow : Config colId file msg -> UploadId -> UploadingFile -> Html msg
 viewFailedRow (Config { cancelUploadMsg, columns, failedRowAttrs }) uploadId file =
     tr
         (failedRowAttrs file)
@@ -511,7 +511,7 @@ viewFailedRow (Config { cancelUploadMsg, columns, failedRowAttrs }) uploadId fil
         ]
 
 
-viewUploadingThumbnail : UploadingFile file -> Html msg
+viewUploadingThumbnail : UploadingFile -> Html msg
 viewUploadingThumbnail file =
     if Upload.isImage file then
         img
