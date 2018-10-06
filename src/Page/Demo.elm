@@ -27,8 +27,8 @@ getAttachmentsUrl =
     "http://localhost:3003/attachments"
 
 
-updateAttachmentUrl : Attachment -> String
-updateAttachmentUrl { reference } =
+attachmentUrl : Attachment -> String
+attachmentUrl { reference } =
     "http://localhost:3003/attachments/" ++ reference
 
 
@@ -152,6 +152,7 @@ type Msg
     | ToggleFileTagging Attachment
     | SetTag Attachment (Maybe String)
     | SoftDelete Bool Attachment
+    | HardDelete Attachment
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -327,6 +328,11 @@ update msg model =
             , Task.attempt (always NoOp) (updateAttachment attachment)
             )
 
+        HardDelete target ->
+            ( { model | files = List.filter (\(Taggable _ { reference }) -> target.reference /= reference) model.files }
+            , Task.attempt (always NoOp) (deleteAttachment target)
+            )
+
         NoOp ->
             ( model, Cmd.none )
 
@@ -347,8 +353,22 @@ updateAttachment attachment =
     Http.request
         { method = "PUT"
         , headers = []
-        , url = updateAttachmentUrl attachment
+        , url = attachmentUrl attachment
         , body = attachmentEncoder attachment |> Http.jsonBody
+        , expect = Http.expectStringResponse (always <| Ok ())
+        , timeout = Nothing
+        , withCredentials = False
+        }
+        |> Http.toTask
+
+
+deleteAttachment : Attachment -> Task Http.Error ()
+deleteAttachment attachment =
+    Http.request
+        { method = "DELETE"
+        , headers = []
+        , url = attachmentUrl attachment
+        , body = Http.emptyBody
         , expect = Http.expectStringResponse (always <| Ok ())
         , timeout = Nothing
         , withCredentials = False
@@ -419,7 +439,33 @@ fileListConfig uploadedFiles =
         |> FileList.defaultSort (FileList.SortByCustom UploadedOn)
         |> FileList.defaultSortDirection FileList.Desc
         |> FileList.rowDisabled .softDeleting
+        |> FileList.multiSelectEnabled False
         |> FileList.failedRowAttrs (always [ style [ ( "background-color", "#f8d7da" ) ] ])
+        |> FileList.fileIcon
+            (\contentType ->
+                let
+                    fileType =
+                        contentType
+                            |> String.split "/"
+                            |> List.reverse
+                            |> List.head
+                in
+                span
+                    [ class "h3 m-0 p-0 far"
+                    , class
+                        (case fileType of
+                            Just "pdf" ->
+                                "fa-file-pdf"
+
+                            Just "word" ->
+                                "fa-file-word"
+
+                            _ ->
+                                "fa-file-alt"
+                        )
+                    ]
+                    []
+            )
         |> FileList.uploadedRowAttrs
             (\attachment ->
                 [ style
@@ -443,7 +489,7 @@ fileListConfig uploadedFiles =
                     Just <|
                         div []
                             [ select
-                                [ class "form-input"
+                                [ class "form-control form-control-lg"
                                 , on "change" decoder
                                 ]
                                 (List.map
@@ -533,11 +579,29 @@ fileListConfig uploadedFiles =
             , label = "Delete"
             , html =
                 \( attachment, _ ) ->
-                    button
-                        [ onClick (SoftDelete (not attachment.softDeleting) attachment)
-                        , class "btn btn-outline-danger"
-                        ]
-                        [ text "Delete" ]
+                    if not attachment.softDeleting then
+                        button
+                            [ onClick (SoftDelete True attachment)
+                            , class "btn btn-sm btn-outline-danger"
+                            ]
+                            [ text "Delete" ]
+                    else
+                        div [ class "btn-toolbar" ]
+                            [ div [ class "input-group mr-1" ]
+                                [ button
+                                    [ onClick (SoftDelete False attachment)
+                                    , class "btn btn-sm btn-outline-secondary"
+                                    ]
+                                    [ text "Cancel" ]
+                                ]
+                            , div [ class "input-group" ]
+                                [ button
+                                    [ onClick (HardDelete attachment)
+                                    , class "btn btn-sm btn-danger"
+                                    ]
+                                    [ text "Confirm" ]
+                                ]
+                            ]
             , sorter = Nothing
             }
 

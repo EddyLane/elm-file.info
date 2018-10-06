@@ -12,8 +12,10 @@ module File.List
         , defaultSort
         , defaultSortDirection
         , failedRowAttrs
+        , fileIcon
         , idFn
         , init
+        , multiSelectEnabled
         , nameFn
         , rowActions
         , rowDisabled
@@ -60,6 +62,8 @@ type alias ConfigRec colId file msg =
     , uploadedRowAttrs : file -> List (Attribute msg)
     , failedRowAttrs : UploadingFile file -> List (Attribute msg)
     , disabled : file -> Bool
+    , fileIcon : String -> Html msg
+    , multiSelectEnabled : Bool
     }
 
 
@@ -133,7 +137,15 @@ config noOpMsg =
         , uploadedRowAttrs = always []
         , failedRowAttrs = always []
         , disabled = always False
+        , fileIcon = always (text "")
+        , multiSelectEnabled = True
         }
+
+
+fileIcon : (String -> Html msg) -> Config colId file msg -> Config colId file msg
+fileIcon fileIcon (Config configRec) =
+    Config <|
+        { configRec | fileIcon = fileIcon }
 
 
 rowDisabled : (file -> Bool) -> Config colId file msg -> Config colId file msg
@@ -214,13 +226,19 @@ column col (Config configRec) =
         { configRec | columns = List.append configRec.columns [ col ] }
 
 
+multiSelectEnabled : Bool -> Config colId file msg -> Config colId file msg
+multiSelectEnabled enabled (Config configRec) =
+    Config <|
+        { configRec | multiSelectEnabled = enabled }
+
+
 
 ---- VIEW ----
 
 
 view : State colId -> Upload.State file -> List file -> Config colId file msg -> Html msg
 view ((State { direction, sortColumn, selectedIds }) as state) upload files ((Config { idFn }) as config) =
-    table [ class "table table-sm" ]
+    table [ class "table table-sm mb-0" ]
         [ viewTableHeader state config files
         , tbody []
             (upload
@@ -303,7 +321,7 @@ sortDirPair sortDir a b =
 
 
 viewTableHeader : State colId -> Config colId file msg -> List file -> Html msg
-viewTableHeader ((State stateRec) as state) ((Config { columns, setListStateMsg, idFn }) as config) files =
+viewTableHeader ((State stateRec) as state) ((Config { columns, setListStateMsg, idFn, multiSelectEnabled }) as config) files =
     let
         allFilesSelected =
             if List.isEmpty files then
@@ -311,25 +329,28 @@ viewTableHeader ((State stateRec) as state) ((Config { columns, setListStateMsg,
             else
                 allUploadedFilesAreSelected idFn stateRec.selectedIds files
     in
-    thead []
+    thead [ class "text-left" ]
         [ tr []
             (List.concat
-                [ [ th
-                        [ scope "col" ]
-                        [ input
-                            [ type_ "checkbox"
-                            , checked allFilesSelected
-                            , onClick
-                                (setListStateMsg
-                                    (if allFilesSelected then
-                                        deSelectAllFiles state
-                                     else
-                                        selectAllFiles config files state
+                [ [ if multiSelectEnabled then
+                        th
+                            [ scope "col" ]
+                            [ input
+                                [ type_ "checkbox"
+                                , checked allFilesSelected
+                                , onClick
+                                    (setListStateMsg
+                                        (if allFilesSelected then
+                                            deSelectAllFiles state
+                                         else
+                                            selectAllFiles config files state
+                                        )
                                     )
-                                )
+                                ]
+                                []
                             ]
-                            []
-                        ]
+                    else
+                        text ""
                   , th [ scope "col" ] []
                   , th
                         [ style [ ( "cursor", "pointer" ) ]
@@ -452,20 +473,29 @@ viewRow ((Config { idFn, rowActions, columns, uploadedRowAttrs }) as config) sta
 
 viewUploadingRow : Config colId file msg -> UploadId -> UploadingFile file -> Html msg
 viewUploadingRow (Config { cancelUploadMsg, columns, uploadedRowAttrs }) uploadId file =
+    let
+        percentString =
+            file
+                |> Upload.uploadPercentage
+                |> round
+                |> toString
+    in
     tr
         []
-        [ td [ class "align-middle" ] []
-        , td [ class "align-middle" ] [ viewUploadingThumbnail file ]
-        , td [ class "align-middle" ] [ text <| Upload.fileName file ]
+        [ td [ class "align-center text-left" ] []
+        , td [ class "align-center text-left" ] [ viewUploadingThumbnail file ]
+        , td [ class "align-center text-left" ] [ text <| Upload.fileName file ]
         , td
-            [ colspan (List.length columns), class "align-middle" ]
-            [ progress
-                [ Attributes.max "100.0"
-                , Attributes.value (Upload.uploadPercentage file |> toString)
+            [ colspan (List.length columns), class "align-center text-left" ]
+            [ div [ class "progress" ]
+                [ div
+                    [ class "progress-bar progress-bar-striped progress-bar-animated"
+                    , style [ ( "width", percentString ++ "%" ) ]
+                    ]
+                    [ text (percentString ++ "%") ]
                 ]
-                []
             ]
-        , td [ class "align-middle" ] [ button [ onClick (cancelUploadMsg uploadId) ] [ text "Cancel" ] ]
+        , td [ class "align-center text-left" ] [ button [ onClick (cancelUploadMsg uploadId) ] [ text "Cancel" ] ]
         ]
 
 
@@ -473,11 +503,11 @@ viewFailedRow : Config colId file msg -> UploadId -> UploadingFile file -> Html 
 viewFailedRow (Config { cancelUploadMsg, columns, failedRowAttrs }) uploadId file =
     tr
         (failedRowAttrs file)
-        [ td [ class "align-middle" ] []
-        , td [ class "align-middle" ] []
-        , td [ class "align-middle" ] [ text <| Upload.fileName file ]
-        , td [ class "align-middle", colspan (List.length columns) ] []
-        , td [ class "align-middle" ] [ button [ onClick (cancelUploadMsg uploadId) ] [ text "Remove" ] ]
+        [ td [ class "align-center text-left" ] []
+        , td [ class "align-center text-left" ] []
+        , td [ class "align-center text-left" ] [ text <| Upload.fileName file ]
+        , td [ class "align-center text-left", colspan (List.length columns) ] []
+        , td [ class "align-center text-left" ] [ button [ onClick (cancelUploadMsg uploadId) ] [ text "Remove" ] ]
         ]
 
 
@@ -503,19 +533,21 @@ viewUploadedRow : Config colId file msg -> State colId -> file -> List (Attribut
 viewUploadedRow ((Config configRec) as config) ((State { selectedIds }) as state) file attrs =
     tr attrs
         (List.concat
-            [ [ td [ class "align-middle" ]
-                    [ input
-                        [ type_ "checkbox"
-                        , checked (Set.member (configRec.idFn file) selectedIds)
-                        , onClick (configRec.setListStateMsg <| toggleFile config file state)
+            [ [ if configRec.multiSelectEnabled then
+                    td [ class "align-center text-left" ]
+                        [ input
+                            [ type_ "checkbox"
+                            , checked (Set.member (configRec.idFn file) selectedIds)
+                            , onClick (configRec.setListStateMsg <| toggleFile config file state)
+                            ]
+                            []
                         ]
-                        []
-                    ]
-              , td [ class "align-middle" ] [ viewUploadedThumbnail config file ]
-              , td [ class "align-middle" ] [ text (configRec.nameFn file) ]
+                else
+                    text ""
+              , td [ class "align-center text-left" ] [ viewUploadedThumbnail config file ]
+              , td [ class "align-center text-left" ] [ text (configRec.nameFn file) ]
               ]
             , viewUserDefinedTds file selectedIds config
-            , [ td [ class "align-middle" ] [] ]
             ]
         )
 
@@ -543,12 +575,12 @@ viewUserDefinedTds file selectedIds (Config { idFn, columns }) =
 
 viewUserDefinedTd : file -> Bool -> Column id file msg -> Html msg
 viewUserDefinedTd file isSelected column =
-    td [ class "align-middle" ]
+    td [ class "align-center text-left" ]
         [ column.html ( file, isSelected ) ]
 
 
 viewUploadedThumbnail : Config colId file msg -> file -> Html msg
-viewUploadedThumbnail (Config { thumbnailSrcFn, contentTypeFn }) file =
+viewUploadedThumbnail (Config { thumbnailSrcFn, contentTypeFn, fileIcon }) file =
     if String.startsWith "image" (contentTypeFn file) then
         img
             [ style thumbnailStyle
@@ -556,11 +588,7 @@ viewUploadedThumbnail (Config { thumbnailSrcFn, contentTypeFn }) file =
             ]
             []
     else
-        span
-            [ class "h3 m-0 p-0 far"
-            , class (fileIcon <| contentTypeFn file)
-            ]
-            []
+        fileIcon <| contentTypeFn file
 
 
 thumbnailStyle : List ( String, String )
@@ -575,23 +603,3 @@ viewIf condition html =
         html
     else
         text ""
-
-
-fileIcon : String -> String
-fileIcon contentType =
-    let
-        fileType =
-            contentType
-                |> String.split "/"
-                |> List.reverse
-                |> List.head
-    in
-    case fileType of
-        Just "pdf" ->
-            "fa-file-pdf"
-
-        Just "word" ->
-            "fa-file-word"
-
-        _ ->
-            "fa-file-alt"

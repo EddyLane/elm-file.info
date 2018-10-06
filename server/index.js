@@ -91,6 +91,19 @@ app.put('/attachments/:reference', ({ body, params: { reference }}, res) => {
 
 });
 
+app.delete('/attachments/:reference', ({params: { reference }}, res) => {
+
+    if (Object.keys(files).indexOf(reference) !== -1) {
+        const file = files[reference];
+        delete files[reference];
+        res.json(file);
+    } else {
+        res.status(404);
+        res.send("Unknown file reference");
+    }
+
+});
+
 app.get('/attachments/:reference', ({params: {reference}}, res) => {
 
     const file = files[reference];
@@ -107,6 +120,7 @@ app.get('/attachments/:reference', ({params: {reference}}, res) => {
     };
 
     res.attachment(file.fileName);
+
     try {
         S3.getObject(s3Params).createReadStream().pipe(res);
     }
