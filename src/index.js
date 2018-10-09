@@ -28,6 +28,7 @@ app.ports.readFileContent.subscribe(([id, file]) => {
 app.ports.upload.subscribe(([id, signedUrl, base64Data, additionalData]) => {
 
     console.info(`PORT: Upload started to ${signedUrl} (${id})`);
+    console.debug('Additional Data', additionalData);
 
     fetch(base64Data)
         .catch(() => {
@@ -50,11 +51,12 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data, additionalData]) => {
 
             app.ports.uploadCancelled.subscribe(cancelHandler);
 
-            uploadRequest.open('PUT', signedUrl, true);
+            uploadRequest.open('POST', signedUrl, true);
 
             uploadRequest.onload = () => {
-                console.info(`PORT: Upload success (${id})`);
-                app.ports.uploaded.send([id, additionalData]);
+                const response = JSON.parse(uploadRequest.response);
+                console.info(`PORT: Upload success (${id})`, response);
+                app.ports.uploaded.send([id, response ]);
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
 
@@ -79,7 +81,12 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data, additionalData]) => {
                 }
             });
 
-            uploadRequest.send(blob);
+
+            const formData = new FormData();
+            formData.append('data', blob);
+            formData.append('fileName', additionalData);
+
+            uploadRequest.send(formData);
 
         });
 

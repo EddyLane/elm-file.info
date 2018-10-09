@@ -1,8 +1,10 @@
 module Main exposing (..)
 
+--import Page.Demo as ComplexDemo
+
 import Html exposing (Html, text)
 import Http
-import Page.Demo as Demo
+import Page.DemoBasic as Demo
 import Task
 
 

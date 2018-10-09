@@ -309,7 +309,7 @@ filename (Config { nameFn }) file =
             nameFn file
 
         Uploading _ file ->
-            Upload.fileName file
+            Upload.fileFilename file
 
 
 sortDirPair : SortDirection -> a -> a -> ( a, a )
@@ -447,7 +447,7 @@ viewRow : Config colId file msg -> State colId -> UploadState file -> List (Html
 viewRow ((Config { idFn, rowActions, columns, uploadedRowAttrs }) as config) state file =
     case file of
         Uploading uploadId uploadingFile ->
-            [ if Upload.isFailed uploadingFile then
+            [ if Upload.fileIsFailed uploadingFile then
                 viewFailedRow config uploadId uploadingFile
               else
                 viewUploadingRow config uploadId uploadingFile
@@ -476,7 +476,7 @@ viewUploadingRow (Config { cancelUploadMsg, columns, uploadedRowAttrs }) uploadI
     let
         percentString =
             file
-                |> Upload.uploadPercentage
+                |> Upload.fileProgress
                 |> round
                 |> toString
     in
@@ -484,7 +484,7 @@ viewUploadingRow (Config { cancelUploadMsg, columns, uploadedRowAttrs }) uploadI
         []
         [ td [ class "align-center text-left" ] []
         , td [ class "align-center text-left" ] [ viewUploadingThumbnail file ]
-        , td [ class "align-center text-left" ] [ text <| Upload.fileName file ]
+        , td [ class "align-center text-left" ] [ text <| Upload.fileFilename file ]
         , td
             [ colspan (List.length columns), class "align-center text-left" ]
             [ div [ class "progress" ]
@@ -505,7 +505,7 @@ viewFailedRow (Config { cancelUploadMsg, columns, failedRowAttrs }) uploadId fil
         (failedRowAttrs file)
         [ td [ class "align-center text-left" ] []
         , td [ class "align-center text-left" ] []
-        , td [ class "align-center text-left" ] [ text <| Upload.fileName file ]
+        , td [ class "align-center text-left" ] [ text <| Upload.fileFilename file ]
         , td [ class "align-center text-left", colspan (List.length columns) ] []
         , td [ class "align-center text-left" ] [ button [ onClick (cancelUploadMsg uploadId) ] [ text "Remove" ] ]
         ]
@@ -513,13 +513,13 @@ viewFailedRow (Config { cancelUploadMsg, columns, failedRowAttrs }) uploadId fil
 
 viewUploadingThumbnail : UploadingFile -> Html msg
 viewUploadingThumbnail file =
-    if Upload.isImage file then
+    if Upload.fileIsImage file then
         img
             [ style thumbnailStyle
             , class "rounded"
             , src
                 (file
-                    |> Upload.base64EncodedData
+                    |> Upload.fileData
                     |> Maybe.map Base64Encoded.toString
                     |> Maybe.withDefault ""
                 )

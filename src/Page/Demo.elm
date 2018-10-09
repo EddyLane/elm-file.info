@@ -138,11 +138,9 @@ attachmentEncoder attachment =
 type Msg
     = NoOp
     | OpenFileBrowser String
-    | InputFiles String (List Drag.File)
+    | UploadFiles (List Drag.File)
     | Base64EncodedFile (Result String ( UploadId, Upload.UploadingFile ))
-    | DragFilesOver Drag.Event
-    | DragFilesLeave Drag.Event
-    | DropFiles Drag.Event
+    | UploadDragFiles Bool
     | GotSignedS3Url UploadId (Result Http.Error AttachmentResponse)
     | UploadedFile (Result String ( UploadId, Attachment ))
     | UploadFailed UploadId
@@ -158,13 +156,8 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        DragFilesOver _ ->
-            ( { model | upload = Upload.dropActive True model.upload }
-            , Cmd.none
-            )
-
-        DragFilesLeave _ ->
-            ( { model | upload = Upload.dropActive False model.upload }
+        UploadDragFiles isOver ->
+            ( { model | upload = Upload.stateDropActive isOver model.upload }
             , Cmd.none
             )
 
@@ -173,30 +166,19 @@ update msg model =
             , Upload.browseClick inputID
             )
 
-        DropFiles { dataTransfer } ->
+        UploadFiles files ->
             let
                 ( upload, base64Cmd ) =
                     model.upload
-                        |> Upload.dropActive False
-                        |> Upload.base64EncodeFiles dataTransfer.files
-            in
-            ( { model | upload = upload }
-            , base64Cmd
-            )
-
-        InputFiles _ files ->
-            let
-                ( upload, base64Cmd ) =
-                    model.upload
-                        |> Upload.dropActive False
-                        |> Upload.base64EncodeFiles files
+                        |> Upload.stateDropActive False
+                        |> Upload.encode uploadConfig files
             in
             ( { model | upload = upload }
             , base64Cmd
             )
 
         Base64EncodedFile (Ok ( id, file )) ->
-            ( { model | upload = Upload.updateFileState id file model.upload }
+            ( { model | upload = Upload.update id file model.upload }
             , Task.attempt (GotSignedS3Url id) (getSignedUrl file)
             )
 
@@ -207,36 +189,36 @@ update msg model =
 
         GotSignedS3Url uploadId (Ok { attachment, signedUrl }) ->
             ( model
-            , Upload.uploadToUrl (SignedUrl.encoder signedUrl) (attachmentEncoder attachment) uploadId model.upload
+            , Upload.upload (SignedUrl.encoder signedUrl) (attachmentEncoder attachment) uploadId model.upload
             )
 
         GotSignedS3Url uploadId (Err e) ->
-            ( { model | upload = Upload.fileUploadFailure uploadId model.upload }
+            ( { model | upload = Upload.failure uploadId model.upload }
             , Cmd.none
             )
 
         UploadProgress requestId progress ->
-            ( { model | upload = Upload.updateS3UploadProgress requestId progress model.upload }
+            ( { model | upload = Upload.progress requestId progress model.upload }
             , Cmd.none
             )
 
         CancelUpload file ->
             let
                 ( upload, cancelCmd ) =
-                    Upload.cancelUpload file model.upload
+                    Upload.cancel file model.upload
             in
             ( { model | upload = upload }
             , cancelCmd
             )
 
         UploadFailed uploadId ->
-            ( { model | upload = Upload.fileUploadFailure uploadId model.upload }
+            ( { model | upload = Upload.failure uploadId model.upload }
             , Cmd.none
             )
 
         UploadedFile (Ok ( uploadId, attachment )) ->
             ( { model
-                | upload = Upload.fileUploadSuccess uploadId model.upload
+                | upload = Upload.success uploadId model.upload
                 , files = Taggable False attachment :: model.files
               }
             , Cmd.none
@@ -324,7 +306,7 @@ update msg model =
 getSignedUrl : Upload.UploadingFile -> Task Http.Error AttachmentResponse
 getSignedUrl file =
     Http.post signedUrlProviderUrl
-        (Http.jsonBody <| Upload.signedUrlMetadataEncoder file)
+        (Http.jsonBody <| Upload.metadataEncoder file)
         (Pipeline.decode AttachmentResponse
             |> Pipeline.required "attachment" attachmentDecoder
             |> Pipeline.required "signedUrl" SignedUrl.decoder
@@ -367,12 +349,11 @@ deleteAttachment attachment =
 uploadConfig : Upload.Config Msg
 uploadConfig =
     Upload.config NoOp
-        |> Upload.maximumFileSize 500
-        |> Upload.onChangeFiles InputFiles
-        |> Upload.browseFiles OpenFileBrowser
-        |> Upload.drag DragFilesOver DragFilesLeave DropFiles
-        |> Upload.inputId "elm-file-example"
-        |> Upload.dropzoneAttrs [ class "card-body" ]
+        |> Upload.configMaximumFileSize 2
+        |> Upload.configUploadFiles UploadFiles
+        |> Upload.configBrowseFiles OpenFileBrowser
+        |> Upload.configDrag UploadDragFiles
+        |> Upload.configDropzoneAttrs [ class "card-body" ]
 
 
 type ColumnId
