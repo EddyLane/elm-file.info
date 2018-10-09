@@ -7,7 +7,6 @@ port module File.Upload
         , config
         , configBase64EncodedMsg
         , configMaximumFileSize
-        , configUploadFailedMsg
         , configUploadProgressMsg
         , configUploadedMsg
         , encode
@@ -24,7 +23,6 @@ port module File.Upload
         , update
         , upload
         , uploadCancelled
-        , uploadFailed
         , uploadProgress
         , uploaded
         , uploads
@@ -182,8 +180,7 @@ type alias ConfigRec msg =
     , dragMsg : Bool -> msg
     , maximumFileSize : Int
     , uploadProgressMsg : UploadId -> Float -> msg
-    , uploadFailedMsg : UploadId -> msg
-    , uploadedFileMsg : UploadId -> Encode.Value -> msg
+    , uploadedMsg : Result UploadId ( UploadId, Encode.Value ) -> msg
     , base64EncodedMsg : Result String ( UploadId, UploadingFile ) -> msg
     , noOpMsg : msg
     }
@@ -208,8 +205,7 @@ config noOpMsg =
         , dragMsg = always noOpMsg
         , maximumFileSize = 5000
         , uploadProgressMsg = always (always noOpMsg)
-        , uploadFailedMsg = always noOpMsg
-        , uploadedFileMsg = always (always noOpMsg)
+        , uploadedMsg = always noOpMsg
         , noOpMsg = noOpMsg
         , base64EncodedMsg = always noOpMsg
         }
@@ -221,16 +217,10 @@ configUploadProgressMsg uploadProgressMsg (Config configRec) =
         { configRec | uploadProgressMsg = uploadProgressMsg }
 
 
-configUploadFailedMsg : (UploadId -> msg) -> Config msg -> Config msg
-configUploadFailedMsg msg (Config configRec) =
-    Config <|
-        { configRec | uploadFailedMsg = msg }
-
-
-configUploadedMsg : (UploadId -> Encode.Value -> msg) -> Config msg -> Config msg
+configUploadedMsg : (Result UploadId ( UploadId, Encode.Value ) -> msg) -> Config msg -> Config msg
 configUploadedMsg msg (Config configRec) =
     Config <|
-        { configRec | uploadedFileMsg = msg }
+        { configRec | uploadedMsg = msg }
 
 
 configBase64EncodedMsg : (Result String ( UploadId, UploadingFile ) -> msg) -> Config msg -> Config msg
@@ -498,12 +488,12 @@ base64EncodeFileSub state (Config { base64EncodedMsg }) =
 
 
 fileUploadedSub : Config msg -> Sub msg
-fileUploadedSub (Config { noOpMsg, uploadedFileMsg }) =
+fileUploadedSub (Config { noOpMsg, uploadedMsg }) =
     uploaded
         (\( encodedId, encodedAttachment ) ->
             case Decode.decodeValue UploadId.decoder encodedId of
                 Ok uploadId ->
-                    uploadedFileMsg uploadId encodedAttachment
+                    uploadedMsg (Ok ( uploadId, encodedAttachment ))
 
                 Err _ ->
                     noOpMsg
@@ -511,11 +501,11 @@ fileUploadedSub (Config { noOpMsg, uploadedFileMsg }) =
 
 
 fileFailureSub : Config msg -> Sub msg
-fileFailureSub (Config { noOpMsg, uploadFailedMsg }) =
+fileFailureSub (Config { noOpMsg, uploadedMsg }) =
     uploadFailed
         (Decode.decodeValue UploadId.decoder
             >> Result.toMaybe
-            >> Maybe.map uploadFailedMsg
+            >> Maybe.map (Err >> uploadedMsg)
             >> Maybe.withDefault noOpMsg
         )
 

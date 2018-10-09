@@ -58,8 +58,7 @@ uploadConfig =
     Upload.config NoOp
         |> Upload.configMaximumFileSize 2
         |> Upload.configUploadProgressMsg UploadProgress
-        |> Upload.configUploadFailedMsg UploadFailed
-        |> Upload.configUploadedMsg UploadSucceeded
+        |> Upload.configUploadedMsg Uploaded
         |> Upload.configBase64EncodedMsg EncodeFile
 
 
@@ -125,8 +124,7 @@ type Msg
     | OpenFileBrowser String
     | UploadFiles (List Drag.File)
     | EncodeFile (Result String ( UploadId, Upload.UploadingFile ))
-    | UploadSucceeded UploadId Encode.Value
-    | UploadFailed UploadId
+    | Uploaded (Result UploadId ( UploadId, Encode.Value ))
     | UploadProgress UploadId Float
     | CancelUpload UploadId
 
@@ -183,21 +181,23 @@ update msg model =
                 |> Upload.cancel file
                 |> Tuple.mapFirst (\upload -> { model | upload = upload })
 
-        UploadFailed uploadId ->
-            ( { model | upload = Upload.failure uploadId model.upload }
+        Uploaded (Ok ( uploadId, encodedAttachment )) ->
+            let
+                files =
+                    encodedAttachment
+                        |> Decode.decodeValue attachmentDecoder
+                        |> Result.map (\file -> file :: model.files)
+                        |> Result.withDefault model.files
+            in
+            ( { model
+                | upload = Upload.success uploadId model.upload
+                , files = files
+              }
             , Cmd.none
             )
 
-        UploadSucceeded uploadId encodedAttachment ->
-            ( case Decode.decodeValue attachmentDecoder encodedAttachment of
-                Ok attachment ->
-                    { model
-                        | upload = Upload.success uploadId model.upload
-                        , files = attachment :: model.files
-                    }
-
-                Err _ ->
-                    model
+        Uploaded (Err uploadId) ->
+            ( { model | upload = Upload.failure uploadId model.upload }
             , Cmd.none
             )
 
