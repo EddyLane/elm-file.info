@@ -79,6 +79,7 @@ type ListCol
 listConfig : FileList.Config ListCol Attachment Msg
 listConfig =
     FileList.config NoOp
+        |> FileList.setListStateMsg SetListState
         |> FileList.idFn .reference
         |> FileList.nameFn .fileName
         |> FileList.contentTypeFn .contentType
@@ -121,6 +122,7 @@ fileEncoder file =
 type Msg
     = NoOp
     | SetDropZoneState DropZone.State
+    | SetListState (FileList.State ListCol)
     | OpenFileBrowser String
     | UploadFiles (List Drag.File)
     | EncodeFile (Result UploadId ( UploadId, Upload.UploadingFile ))
@@ -132,6 +134,11 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        SetListState list ->
+            ( { model | list = list }
+            , Cmd.none
+            )
+
         SetDropZoneState dropZone ->
             ( { model | dropZone = dropZone }
             , Cmd.none

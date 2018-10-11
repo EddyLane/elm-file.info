@@ -25,7 +25,7 @@ app.ports.readFileContent.subscribe(([id, file]) => {
 });
 
 
-app.ports.upload.subscribe(([id, signedUrl, base64Data, additionalData]) => {
+app.ports.uploadPort.subscribe(([id, signedUrl, base64Data, additionalData]) => {
 
     console.info(`PORT: Upload started to ${signedUrl} (${id})`);
     console.debug('Additional Data', additionalData);
@@ -92,7 +92,7 @@ app.ports.upload.subscribe(([id, signedUrl, base64Data, additionalData]) => {
 
 });
 
-app.ports.browseClick.subscribe((inputId) => {
+app.ports.openFileBrowser.subscribe((inputId) => {
 
     console.info(`PORT: browseClick (${inputId})`);
 

@@ -138,7 +138,7 @@ config noOpMsg =
         , failedRowAttrs = always []
         , disabled = always False
         , fileIcon = always (text "")
-        , multiSelectEnabled = True
+        , multiSelectEnabled = False
         }
 
 
