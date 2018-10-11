@@ -123,7 +123,7 @@ type Msg
     | SetDropZoneState DropZone.State
     | OpenFileBrowser String
     | UploadFiles (List Drag.File)
-    | EncodeFile (Result String ( UploadId, Upload.UploadingFile ))
+    | EncodeFile (Result UploadId ( UploadId, Upload.UploadingFile ))
     | Uploaded (Result UploadId ( UploadId, Encode.Value ))
     | UploadProgress UploadId Float
     | CancelUpload UploadId
@@ -166,8 +166,8 @@ update msg model =
             , Upload.upload uploadUrl additionalData id updatedUploadState
             )
 
-        EncodeFile (Err err) ->
-            ( model
+        EncodeFile (Err uploadId) ->
+            ( { model | upload = Upload.failure uploadId model.upload }
             , Cmd.none
             )
 

@@ -98,13 +98,16 @@ The Decode.Value is the raw JS file event. For more details see the Drag.File do
 port readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
 
 
+port readFileContentFailed : (Encode.Value -> msg) -> Sub msg
+
+
 {-| A port used to update the internal file with the Base64 encoded file
 -}
 port fileContentRead : (Encode.Value -> msg) -> Sub msg
 
 
 {-| A port used to tell JS-land to actually upload a file to S3. Sends the UploadId, SignedUrl and Base64Encoded data
-The encode values are:
+The encode values are:fileContentRead
 
   - UploadId
   - SignedUrl
@@ -181,7 +184,7 @@ type alias ConfigRec msg =
     , maximumFileSize : Int
     , uploadProgressMsg : UploadId -> Float -> msg
     , uploadedMsg : Result UploadId ( UploadId, Encode.Value ) -> msg
-    , base64EncodedMsg : Result String ( UploadId, UploadingFile ) -> msg
+    , base64EncodedMsg : Result UploadId ( UploadId, UploadingFile ) -> msg
     , noOpMsg : msg
     }
 
@@ -223,7 +226,7 @@ configUploadedMsg msg (Config configRec) =
         { configRec | uploadedMsg = msg }
 
 
-configBase64EncodedMsg : (Result String ( UploadId, UploadingFile ) -> msg) -> Config msg -> Config msg
+configBase64EncodedMsg : (Result UploadId ( UploadId, UploadingFile ) -> msg) -> Config msg -> Config msg
 configBase64EncodedMsg msg (Config configRec) =
     Config <|
         { configRec | base64EncodedMsg = msg }
@@ -479,12 +482,16 @@ subscriptions state config =
 
 
 base64EncodeFileSub : State -> Config msg -> Sub msg
-base64EncodeFileSub state (Config { base64EncodedMsg }) =
-    state
-        |> base64PortDecoder
-        |> Decode.decodeValue
-        |> fileContentRead
-        |> Sub.map base64EncodedMsg
+base64EncodeFileSub state (Config { base64EncodedMsg, noOpMsg }) =
+    fileContentRead
+        (\encodedValue ->
+            case Decode.decodeValue (base64PortDecoder state) encodedValue of
+                Ok upload ->
+                    base64EncodedMsg (Ok upload)
+
+                Err _ ->
+                    noOpMsg
+        )
 
 
 fileUploadedSub : Config msg -> Sub msg
@@ -497,6 +504,16 @@ fileUploadedSub (Config { noOpMsg, uploadedMsg }) =
 
                 Err _ ->
                     noOpMsg
+        )
+
+
+readFileContentFailedSub : Config msg -> Sub msg
+readFileContentFailedSub (Config { noOpMsg, base64EncodedMsg }) =
+    readFileContentFailed
+        (Decode.decodeValue UploadId.decoder
+            >> Result.toMaybe
+            >> Maybe.map (Err >> base64EncodedMsg)
+            >> Maybe.withDefault noOpMsg
         )
 
 
