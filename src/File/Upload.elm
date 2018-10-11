@@ -98,7 +98,7 @@ The Decode.Value is the raw JS file event. For more details see the Drag.File do
 port readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
 
 
-port readFileContentFailed : (Encode.Value -> msg) -> Sub msg
+port fileContentReadFailed : (Encode.Value -> msg) -> Sub msg
 
 
 {-| A port used to update the internal file with the Base64 encoded file
@@ -478,6 +478,7 @@ subscriptions state config =
         , fileFailureSub config
         , fileUploadProgressSub config
         , base64EncodeFileSub state config
+        , readFileContentFailedSub config
         ]
 
 
@@ -509,7 +510,7 @@ fileUploadedSub (Config { noOpMsg, uploadedMsg }) =
 
 readFileContentFailedSub : Config msg -> Sub msg
 readFileContentFailedSub (Config { noOpMsg, base64EncodedMsg }) =
-    readFileContentFailed
+    fileContentReadFailed
         (Decode.decodeValue UploadId.decoder
             >> Result.toMaybe
             >> Maybe.map (Err >> base64EncodedMsg)

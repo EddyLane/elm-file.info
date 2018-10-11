@@ -18,7 +18,7 @@ app.ports.readFileContent.subscribe(([id, file]) => {
         app.ports.fileContentRead.send({id, result});
     });
 
-    reader.onerror = () => app.ports.uploadFailed.send(id);
+    reader.onerror = () => app.ports.fileContentReadFailed.send(id);
 
     reader.readAsDataURL(file);
 

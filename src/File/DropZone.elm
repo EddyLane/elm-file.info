@@ -140,11 +140,15 @@ view (State state) (Config config) =
 
 dropZone : StateRec -> ConfigRec msg -> Html msg
 dropZone state config =
+    let
+        setDragging dragging =
+            config.setStateMsg (State { state | dropActive = dragging })
+    in
     div
         (List.concat
             [ config.attrsFn (State state)
-            , [ Drag.onOver (always (config.setStateMsg (State { state | dropActive = True })))
-              , Drag.onLeave (always (config.setStateMsg (State { state | dropActive = False })))
+            , [ Drag.onOver (always <| setDragging True)
+              , Drag.onLeave (always <| setDragging False)
               , Drag.onDrop (.dataTransfer >> .files >> config.uploadFilesMsg)
               ]
             ]
