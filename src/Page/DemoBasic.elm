@@ -1,12 +1,11 @@
 module Page.DemoBasic exposing (Model, Msg, init, subscriptions, update, view)
 
+import Data.UploadId as UploadId exposing (UploadId)
 import Date exposing (Date)
 import Date.Extra
 import Drag
-import File.Data.UploadId as UploadId exposing (UploadId)
-import File.DropZone as DropZone
-import File.List as FileList
-import File.Upload as Upload
+import DropZone as DropZone
+import FileList
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (on, onClick, targetValue)
@@ -14,7 +13,9 @@ import Http
 import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
+import List as FileList
 import Task exposing (Task)
+import Upload as Upload
 
 
 attachmentCollectionUrl : String
@@ -35,7 +36,7 @@ type alias Model =
     { dropZone : DropZone.State
     , upload : Upload.State
     , files : List Attachment
-    , list : FileList.State ListCol
+    , list : FileList.State ()
     }
 
 
@@ -56,8 +57,8 @@ initialModel files =
 uploadConfig : Upload.Config Msg
 uploadConfig =
     Upload.config NoOp
+        |> Upload.configSetStateMsg SetUploadState
         |> Upload.configMaximumFileSize 2
-        |> Upload.configUploadProgressMsg UploadProgress
         |> Upload.configUploadedMsg Uploaded
         |> Upload.configBase64EncodedMsg EncodeFile
 
@@ -72,18 +73,14 @@ dropZoneConfig =
         |> DropZone.configContents dropZoneContents
 
 
-type ListCol
-    = Test
-
-
-listConfig : FileList.Config ListCol Attachment Msg
+listConfig : FileList.Config () Attachment Msg
 listConfig =
     FileList.config NoOp
-        |> FileList.setListStateMsg SetListState
-        |> FileList.idFn .reference
-        |> FileList.nameFn .fileName
-        |> FileList.contentTypeFn .contentType
-        |> FileList.thumbnailSrcFn (.reference >> (++) "http://localhost:3003/attachments/")
+        |> FileList.configListStateMsg SetListState
+        |> FileList.configIdFn .reference
+        |> FileList.configNameFn .fileName
+        |> FileList.configContentTypeFn .contentType
+        |> FileList.configThumbnailSrcFn (.reference >> (++) "http://localhost:3003/attachments/")
 
 
 loadAttachments : Task Http.Error (List Attachment)
@@ -122,18 +119,23 @@ fileEncoder file =
 type Msg
     = NoOp
     | SetDropZoneState DropZone.State
-    | SetListState (FileList.State ListCol)
+    | SetListState (FileList.State ())
+    | SetUploadState Upload.State
     | OpenFileBrowser String
     | UploadFiles (List Drag.File)
     | EncodeFile (Result UploadId ( UploadId, Upload.UploadingFile ))
     | Uploaded (Result UploadId ( UploadId, Encode.Value ))
-    | UploadProgress UploadId Float
     | CancelUpload UploadId
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        SetUploadState upload ->
+            ( { model | upload = upload }
+            , Cmd.none
+            )
+
         SetListState list ->
             ( { model | list = list }
             , Cmd.none
@@ -175,11 +177,6 @@ update msg model =
 
         EncodeFile (Err uploadId) ->
             ( { model | upload = Upload.failure uploadId model.upload }
-            , Cmd.none
-            )
-
-        UploadProgress uploadId progress ->
-            ( { model | upload = Upload.progress uploadId progress model.upload }
             , Cmd.none
             )
 
