@@ -1,0 +1,3 @@
+[submodule "elm-file"]
+	path = elm-file
+	url = https://github.com/EddyLane/elm-file
