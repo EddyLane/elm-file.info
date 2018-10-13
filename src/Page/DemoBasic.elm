@@ -1,11 +1,12 @@
 module Page.DemoBasic exposing (Model, Msg, init, subscriptions, update, view)
 
-import Data.UploadId as UploadId exposing (UploadId)
 import Date exposing (Date)
 import Date.Extra
 import Drag
-import DropZone as DropZone
-import FileList
+import File.Data.UploadId as UploadId exposing (UploadId)
+import File.DropZone as DropZone
+import File.FileList as FileList
+import File.Upload as Upload
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (on, onClick, targetValue)
@@ -15,7 +16,6 @@ import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
 import List as FileList
 import Task exposing (Task)
-import Upload as Upload
 
 
 attachmentCollectionUrl : String
