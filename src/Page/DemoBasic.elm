@@ -156,7 +156,7 @@ update msg model =
         UploadFiles files ->
             let
                 ( upload, base64Cmd ) =
-                    Upload.encode uploadConfig files model.upload
+                    Upload.encode uploadSubs uploadConfig files model.upload
             in
             ( { model | upload = upload }
             , base64Cmd
@@ -174,7 +174,7 @@ update msg model =
                     Encode.string (Upload.fileFilename file)
             in
             ( { model | upload = updatedUploadState }
-            , Upload.upload uploadUrl additionalData id updatedUploadState
+            , Upload.upload uploadSubs uploadUrl additionalData id updatedUploadState
             )
 
         EncodeFile (Err uploadId) ->
@@ -184,7 +184,7 @@ update msg model =
 
         CancelUpload file ->
             model.upload
-                |> Upload.cancel file
+                |> Upload.cancel uploadSubs file
                 |> Tuple.mapFirst (\upload -> { model | upload = upload })
 
         Uploaded (Ok ( uploadId, encodedAttachment )) ->
@@ -265,19 +265,23 @@ dropZoneAttrs dropzoneState =
 ---- SUBSCRIPTIONS ----
 
 
+uploadSubs : Upload.SubsConfig Msg
+uploadSubs =
+    { uploadProgress = Ports.Upload.uploadProgress
+    , uploadCancelled = Ports.Upload.uploadCancelled
+    , readFileContent = Ports.Upload.readFileContent
+    , fileContentReadFailed = Ports.Upload.fileContentReadFailed
+    , fileContentRead = Ports.Upload.fileContentRead
+    , uploadPort = Ports.Upload.uploadPort
+    , uploadFailed = Ports.Upload.uploadFailed
+    , uploaded = Ports.Upload.uploaded
+    }
+
+
 subscriptions : Model -> Sub Msg
 subscriptions { upload } =
     Upload.subscriptions
         { state = upload
         , config = uploadConfig
-        , subscriptions =
-            { uploadProgress = Ports.Upload.uploadProgress
-            , uploadCancelled = Ports.Upload.uploadCancelled
-            , readFileContent = Ports.Upload.readFileContent
-            , fileContentReadFailed = Ports.Upload.fileContentReadFailed
-            , fileContentRead = Ports.Upload.fileContentRead
-            , uploadPort = Ports.Upload.uploadPort
-            , uploadFailed = Ports.Upload.uploadFailed
-            , uploaded = Ports.Upload.uploaded
-            }
+        , subscriptions = uploadSubs
         }
