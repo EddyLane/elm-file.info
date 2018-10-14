@@ -24,16 +24,15 @@ app.ports.readFileContent.subscribe(([id, file]) => {
 
 });
 
+app.ports.uploadPort.subscribe(({uploadId, uploadUrl, base64Data, additionalData}) => {
 
-app.ports.uploadPort.subscribe(([id, signedUrl, base64Data, additionalData]) => {
-
-    console.info(`PORT: Upload started to ${signedUrl} (${id})`);
+    console.info(`PORT: Upload started to ${uploadUrl} (${uploadId})`);
     console.debug('Additional Data', additionalData);
 
     fetch(base64Data)
         .catch(() => {
-            console.error(`PORT: Upload failure (${id})`);
-            app.ports.uploadFailed.send(id);
+            console.error(`PORT: Upload failure (${uploadId})`);
+            app.ports.uploadFailed.send(uploadId);
         })
         .then(res => res.blob())
         .then((blob) => {
@@ -41,28 +40,28 @@ app.ports.uploadPort.subscribe(([id, signedUrl, base64Data, additionalData]) => 
             const uploadRequest = new XMLHttpRequest();
 
             const cancelHandler = (cancelRequestId) => {
-                if (id !== cancelRequestId) {
+                if (uploadId !== cancelRequestId) {
                     return;
                 }
-                console.info(`PORT: Upload cancelled (${id})`);
+                console.info(`PORT: Upload cancelled (${uploadId})`);
                 uploadRequest.abort();
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
 
             app.ports.uploadCancelled.subscribe(cancelHandler);
 
-            uploadRequest.open('POST', signedUrl, true);
+            uploadRequest.open('POST', uploadUrl, true);
 
             uploadRequest.onload = () => {
                 const response = JSON.parse(uploadRequest.response);
-                console.info(`PORT: Upload success (${id})`, response);
-                app.ports.uploaded.send([id, response ]);
+                console.info(`PORT: Upload success (${uploadId})`, response);
+                app.ports.uploaded.send([uploadId, response ]);
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
 
             uploadRequest.onerror = () => {
-                console.error(`PORT: Upload failure (${id})`);
-                app.ports.uploadFailed.send(id);
+                console.error(`PORT: Upload failure (${uploadId})`);
+                app.ports.uploadFailed.send(uploadId);
                 app.ports.uploadCancelled.unsubscribe(cancelHandler);
             };
 
@@ -72,13 +71,15 @@ app.ports.uploadPort.subscribe(([id, signedUrl, base64Data, additionalData]) => 
 
                     const progress = event.loaded / event.total * 100;
 
-                    console.debug(`PORT: Upload progress ${parseFloat(progress)} (${id})`);
+                    console.debug(`PORT: Upload progress ${parseFloat(progress)} (${uploadId})`);
 
                     app.ports.uploadProgress.send([
-                        id,
+                        uploadId,
                         progress
                     ]);
+
                 }
+
             });
 
 
