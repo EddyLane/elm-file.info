@@ -1,4 +1,4 @@
-module Page.DemoBasic exposing (Model, Msg, init, subscriptions, update, view)
+port module Page.DemoBasic exposing (Model, Msg, init, subscriptions, update, view)
 
 import Date exposing (Date)
 import Date.Extra
@@ -15,6 +15,7 @@ import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
 import List as FileList
+import Ports.Upload
 import Task exposing (Task)
 
 
@@ -265,4 +266,17 @@ dropZoneAttrs dropzoneState =
 
 subscriptions : Model -> Sub Msg
 subscriptions { upload } =
-    Upload.subscriptions upload uploadConfig
+    Upload.subscriptions
+        { state = upload
+        , config = uploadConfig
+        , subscriptions =
+            { uploadProgress = Ports.Upload.uploadProgress
+            , uploadCancelled = Ports.Upload.uploadCancelled
+            , readFileContent = Ports.Upload.readFileContent
+            , fileContentReadFailed = Ports.Upload.fileContentReadFailed
+            , fileContentRead = Ports.Upload.fileContentRead
+            , uploadPort = Ports.Upload.uploadPort
+            , uploadFailed = Ports.Upload.uploadFailed
+            , uploaded = Ports.Upload.uploaded
+            }
+        }
