@@ -1,11 +1,13 @@
-module Main exposing (..)
+module Main exposing (Model(..), Msg(..), init, main, subscriptions, update, view)
 
 --import Page.Demo as ComplexDemo
 
+import Browser
 import Html exposing (Html, text)
 import Http
 import Page.DemoBasic as Demo
 import Task
+
 
 
 ---- MODEL ----
@@ -57,18 +59,23 @@ update msg model =
 ---- VIEW ----
 
 
-view : Model -> Html Msg
+view : Model -> Browser.Document Msg
 view model =
     case model of
         Loaded subModel ->
-            Demo.view subModel
-                |> Html.map DemoMsg
+            { title = "Elm File demo #1"
+            , body = [ Html.map DemoMsg (Demo.view subModel) ]
+            }
 
         Loading ->
-            text "Loading..."
+            { title = "Elm File demo #1 (loading)"
+            , body = [ text "Loading..." ]
+            }
 
         Errored ->
-            text "Something went wrong"
+            { title = "Elm File demo #1 (error)"
+            , body = [ text "Something went wrong" ]
+            }
 
 
 
@@ -93,11 +100,11 @@ subscriptions model =
 ---- PROGRAM ----
 
 
-main : Program Never Model Msg
+main : Program () Model Msg
 main =
-    Html.program
+    Browser.document
         { view = view
-        , init = init
+        , init = always init
         , update = update
         , subscriptions = subscriptions
         }

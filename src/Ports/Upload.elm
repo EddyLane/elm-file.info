@@ -1,4 +1,4 @@
-port module Ports.Upload exposing (..)
+port module Ports.Upload exposing (fileContentRead, fileContentReadFailed, readFileContent, uploadCancelled, uploadFailed, uploadPort, uploadProgress, uploaded)
 
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -37,7 +37,7 @@ The encode values are:fileContentRead
   - Base64Encoded
 
 -}
-port uploadPort : ( Encode.Value, Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
+port uploadPort : { uploadId : Encode.Value, uploadUrl : Encode.Value, base64Data : Encode.Value, additionalData : Encode.Value } -> Cmd msg
 
 
 {-| A port used to tell the internal state that an upload has failed, and to update accordingly}

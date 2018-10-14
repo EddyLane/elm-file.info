@@ -1,8 +1,5 @@
 port module Page.DemoBasic exposing (Model, Msg, init, subscriptions, update, view)
 
-import Date exposing (Date)
-import Date.Extra
-import Drag
 import File.Data.UploadId as UploadId exposing (UploadId)
 import File.DropZone as DropZone
 import File.FileList as FileList
@@ -10,9 +7,9 @@ import File.Upload as Upload
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (on, onClick, targetValue)
+import Html.Events.Extra.Drag as Drag
 import Http
 import Json.Decode as Decode
-import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
 import List as FileList
 import Ports.DropZone
@@ -100,16 +97,16 @@ type alias Attachment =
 
 attachmentDecoder : Decode.Decoder Attachment
 attachmentDecoder =
-    Pipeline.decode Attachment
-        |> Pipeline.required "reference" Decode.string
-        |> Pipeline.required "mimetype" Decode.string
-        |> Pipeline.required "fileName" Decode.string
+    Decode.map3 Attachment
+        (Decode.field "reference" Decode.string)
+        (Decode.field "mimetype" Decode.string)
+        (Decode.field "fileName" Decode.string)
 
 
 fileEncoder : Drag.File -> Encode.Value
 fileEncoder file =
     Encode.object
-        [ ( "contentType", Encode.string file.typeMIME )
+        [ ( "contentType", Encode.string file.mimeType )
         , ( "fileName", Encode.string file.name )
         ]
 
@@ -242,22 +239,22 @@ dropZoneContents _ openFileBrowser =
 
 dropZoneAttrs : DropZone.State -> List (Attribute Msg)
 dropZoneAttrs dropzoneState =
-    [ style
-        [ ( "width", "100%" )
-        , ( "height", "150px" )
-        , ( "border-bottom"
-          , if DropZone.isActive dropzoneState then
-                "2px dashed #ddd"
-            else
-                "2px dashed transparent"
-          )
-        , ( "background"
-          , if DropZone.isActive dropzoneState then
-                "#dff0d8"
-            else
-                "#f7f7f7"
-          )
-        ]
+    [ style "width" "100%"
+    , style "height" "150px"
+    , style "border-bottom"
+        (if DropZone.isActive dropzoneState then
+            "2px dashed #ddd"
+
+         else
+            "2px dashed transparent"
+        )
+    , style "background"
+        (if DropZone.isActive dropzoneState then
+            "#dff0d8"
+
+         else
+            "#f7f7f7"
+        )
     ]
 
 
@@ -282,6 +279,6 @@ subscriptions : Model -> Sub Msg
 subscriptions { upload } =
     Upload.subscriptions
         { state = upload
-        , config = uploadConfig
-        , subscriptions = uploadSubs
+        , conf = uploadConfig
+        , subs = uploadSubs
         }
