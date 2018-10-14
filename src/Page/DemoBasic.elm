@@ -15,6 +15,7 @@ import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
 import List as FileList
+import Ports.DropZone
 import Ports.Upload
 import Task exposing (Task)
 
@@ -149,7 +150,7 @@ update msg model =
 
         OpenFileBrowser inputID ->
             ( model
-            , DropZone.openFileBrowser inputID
+            , Ports.DropZone.openFileBrowser inputID
             )
 
         UploadFiles files ->
