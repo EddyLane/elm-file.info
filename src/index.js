@@ -1,108 +1,196 @@
 import './main.css';
-import { Elm } from './Main.elm';
+import {Elm} from './Main.elm';
 import registerServiceWorker from './registerServiceWorker';
 
-const app = Elm.Main.init();
+(function ({ports: {uploadSub, uploadCmd}}) {
 
 
-app.ports.readFileContent.subscribe(([id, file]) => {
+    const msgs = {
+        encode: 'encode',
+        progress: 'progress',
+        upload: 'upload',
+        cancel: 'cancel',
+        openFileBrowser: 'open-file-browser'
+    };
 
-    console.info(`PORT: Read base64 contents started (${id})`);
+    uploadCmd.subscribe(({message, uploadId, data}) => {
+        switch (message) {
 
-    const reader = new FileReader();
+            case msgs.encode:
+                handlers.encode({uploadId, data});
+                break;
 
-    reader.onload = (({target: {result}}) => {
+            case msgs.upload:
+                handlers.upload({uploadId, data});
+                break;
 
-        console.info(`PORT: Read base64 contents success (${id})`);
+            case msgs.openFileBrowser:
+                handlers.openFileBrowser(data);
+                break;
 
-        app.ports.fileContentRead.send({id, result});
+            default:
+                console.warn(`Unhandled message ${message}`);
+
+        }
     });
 
-    reader.onerror = () => app.ports.fileContentReadFailed.send(id);
+    const handlers = {
 
-    reader.readAsDataURL(file);
+        openFileBrowser: (inputId) => {
+            console.info(`[elm-file] openFileBrowser (${inputId})`);
 
-});
+            const element = document.getElementById(inputId);
 
-app.ports.uploadPort.subscribe(({uploadId, uploadUrl, base64Data, additionalData}) => {
+            if (element) {
+                element.click();
+            }
+        },
 
-    console.info(`PORT: Upload started to ${uploadUrl} (${uploadId})`);
-    console.debug('Additional Data', additionalData);
+        encode: ({uploadId, data}) => {
 
-    fetch(base64Data)
-        .catch(() => {
-            console.error(`PORT: Upload failure (${uploadId})`);
-            app.ports.uploadFailed.send(uploadId);
-        })
-        .then(res => res.blob())
-        .then((blob) => {
+            console.debug(`[elm-file] Read base64 contents started (${uploadId})`);
 
-            const uploadRequest = new XMLHttpRequest();
+            const reader = new FileReader();
 
-            const cancelHandler = (cancelRequestId) => {
-                if (uploadId !== cancelRequestId) {
-                    return;
-                }
-                console.info(`PORT: Upload cancelled (${uploadId})`);
-                uploadRequest.abort();
-                app.ports.uploadCancelled.unsubscribe(cancelHandler);
-            };
+            reader.onload = (({target: {result}}) => {
 
-            app.ports.uploadCancelled.subscribe(cancelHandler);
+                console.info(`[elm-file] Read base64 contents success (${uploadId})`);
 
-            uploadRequest.open('POST', uploadUrl, true);
-
-            uploadRequest.onload = () => {
-                const response = JSON.parse(uploadRequest.response);
-                console.info(`PORT: Upload success (${uploadId})`, response);
-                app.ports.uploaded.send([uploadId, response ]);
-                app.ports.uploadCancelled.unsubscribe(cancelHandler);
-            };
-
-            uploadRequest.onerror = () => {
-                console.error(`PORT: Upload failure (${uploadId})`);
-                app.ports.uploadFailed.send(uploadId);
-                app.ports.uploadCancelled.unsubscribe(cancelHandler);
-            };
-
-            uploadRequest.upload.addEventListener('progress', (event) => {
-
-                if (event.lengthComputable) {
-
-                    const progress = event.loaded / event.total * 100;
-
-                    console.debug(`PORT: Upload progress ${parseFloat(progress)} (${uploadId})`);
-
-                    app.ports.uploadProgress.send([
-                        uploadId,
-                        progress
-                    ]);
-
-                }
+                uploadSub.send({
+                    uploadId,
+                    message: msgs.encode,
+                    data: result
+                });
 
             });
 
+            reader.onerror = () => {
 
-            const formData = new FormData();
-            formData.append('data', blob);
-            formData.append('fileName', additionalData);
+                console.error(`[elm-file] Read base64 contents failure (${uploadId})`);
 
-            uploadRequest.send(formData);
+                uploadSub.send({
+                    uploadId,
+                    message: msgs.encode,
+                    data: {error: "Unable to read file"}
+                });
+            };
 
-        });
+            reader.readAsDataURL(data);
 
-});
+        },
 
-app.ports.openFileBrowser.subscribe((inputId) => {
+        upload: ({uploadId, data: {uploadUrl, base64Data, additionalData}}) => {
 
-    console.info(`PORT: browseClick (${inputId})`);
+            console.debug(`[elm-file] Upload started to ${uploadUrl} (${uploadId})`);
+            console.debug(`[elm-file] Upload additional data (${uploadId})`, additionalData);
 
-    const element = document.getElementById(inputId);
+            function upload(blob) {
 
-    if (element) {
-        element.click();
-    }
+                const uploadRequest = new XMLHttpRequest();
 
-});
+                const cancelHandler = (msg) => {
+
+                    debugger;
+
+                    if (msg.message !== msgs.cancel || uploadId !== msg.uploadId) {
+                        return;
+                    }
+
+                    console.info(`[elm-file] Upload cancelled (${uploadId})`);
+                    uploadRequest.abort();
+
+                    uploadCmd.unsubscribe(cancelHandler);
+
+                };
+
+                uploadCmd.subscribe(cancelHandler);
+
+                uploadRequest.open('POST', uploadUrl, true);
+
+                uploadRequest.onload = () => {
+                    if ([200, 201].indexOf(uploadRequest.status) === -1) {
+                        return error();
+                    }
+
+                    return success();
+                };
+
+                uploadRequest.onerror = () => error();
+                uploadRequest.upload.addEventListener('progress', (e) => progress(e));
+
+                function progress(event) {
+                    if (event.lengthComputable) {
+
+                        const progress = event.loaded / event.total * 100;
+
+                        console.debug(`[elm-file] Upload progress ${parseFloat(progress)} (${uploadId})`);
+
+                        uploadSub.send({
+                            uploadId,
+                            message: msgs.progress,
+                            data: progress
+                        });
+
+                    }
+                }
+
+                function success() {
+
+                    console.info(`[elm-file] Upload success (${uploadId})`, uploadRequest.response);
+
+                    const data = JSON.parse(uploadRequest.response);
+
+                    uploadSub.send({
+                        uploadId,
+                        message: msgs.upload,
+                        data
+                    });
+
+                    uploadCmd.unsubscribe(cancelHandler);
+                }
+
+                function error() {
+                    console.error(`[elm-file] Upload failure (${uploadId})`);
+
+                    uploadSub.send({
+                        uploadId,
+                        message: msgs.upload,
+                        data: {
+                            error: `${uploadRequest.status}; ${uploadRequest.statusText} ${uploadRequest.responseText}`
+                        }
+                    });
+
+                    uploadCmd.unsubscribe(cancelHandler);
+                }
+
+                const formData = new FormData();
+                formData.append('data', blob);
+                formData.append('fileName', additionalData);
+
+                uploadRequest.send(formData);
+
+            }
+
+            fetch(base64Data)
+                .then(res => res.blob())
+                .catch(() => {
+                    console.error(`[elm-file] Upload failure (${uploadId})`);
+
+                    uploadSub.send({
+                        uploadId,
+                        message: msgs.upload,
+                        data: {error: "Failed to decode Base64 contents"}
+                    });
+
+                })
+                .then(upload);
+        }
+
+
+    };
+
+
+})(Elm.Main.init());
+
 
 registerServiceWorker();
