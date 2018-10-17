@@ -1,28 +1,21 @@
 port module Page.DemoBasic exposing (Model, Msg, init, subscriptions, update, view)
 
---import Html exposing (..)
---import Html.Attributes exposing (..)
---import Html.Events exposing (on, onClick)
-
-import Element exposing (..)
-import Element.Background as Background
-import Element.Border as Border
-import Element.Events as Events
-import Element.Font as Font
-import FeatherIcons
 import File.Data.UploadId as UploadId exposing (UploadId)
 import File.DropZone as DropZone
 import File.FileList as FileList
 import File.Gallery as Gallery
 import File.Upload as Upload
 import Html
+import Html.Events exposing (on, onClick)
 import Html.Events.Extra.Drag as Drag
+import Html.Styled exposing (..)
+import Html.Styled.Attributes exposing (class, css, href, src, style)
+import Html.Styled.Events exposing (onClick)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List as FileList
 import Task exposing (Task)
-import View.Helpers as View
 
 
 
@@ -68,7 +61,7 @@ initialModel files =
 uploadConfig : Upload.Config Msg
 uploadConfig =
     Upload.config NoOp
-        --        |> Upload.configMaximumFileSize 2
+        |> Upload.configMaximumFileSize 100000000
         |> Upload.configSetStateMsg SetUploadState
         |> Upload.configUploadedMsg Uploaded
         |> Upload.configBase64EncodedMsg EncodeFile
@@ -88,8 +81,8 @@ dropZoneConfig =
         |> DropZone.configSetState SetDropZoneState
         |> DropZone.configUploadFiles UploadFiles
         |> DropZone.configBrowseFiles OpenFileBrowser
-        --        |> DropZone.configAttrs dropZoneAttrs
-        |> DropZone.configContents dropZoneContent
+        |> DropZone.configAttrs dropZoneAttrs
+        |> DropZone.configContents dropZoneContents
         |> DropZone.configPorts
             { cmd = uploadCmd
             , sub = uploadSub
@@ -105,6 +98,16 @@ listConfig =
         |> FileList.configNameFn .fileName
         |> FileList.configContentTypeFn .contentType
         |> FileList.configThumbnailSrcFn (.reference >> (++) "http://localhost:3003/attachments/")
+
+
+galleryConfig : Gallery.Config Attachment Msg
+galleryConfig =
+    Gallery.config NoOp
+        |> Gallery.configCancelUploadMsg CancelUpload
+        |> Gallery.configIdFn .reference
+        |> Gallery.configNameFn .fileName
+        |> Gallery.configContentTypeFn .contentType
+        |> Gallery.configThumbnailSrcFn (.reference >> (++) "http://localhost:3003/attachments/")
 
 
 
@@ -233,94 +236,32 @@ update msg model =
 ---- VIEW ----
 
 
-view : Model -> Element Msg
-view model =
-    Element.column
-        []
-        [ Element.el
-            [ Border.color (rgb 0 0.7 0)
-            ]
-            (Element.html (DropZone.view model.dropZone dropZoneConfig))
-
-        --        , Element.html (FileList.view model.list model.upload model.files listConfig)
+view : Model -> Html Msg
+view { upload, files, list, dropZone } =
+    div [ class "container my-4" ]
+        [ div [ class "row py-3" ] [ DropZone.view dropZone dropZoneConfig ]
+        , div [ class "row py-3" ] [ Gallery.view files galleryConfig ]
         ]
 
 
-dropZoneContent : DropZone.State -> Msg -> List (Html.Attribute Msg) -> List (Html.Html Msg)
-dropZoneContent _ openFileBrowser dragAttrs =
-    [ layout []
-        (row
-            (List.concat
-                [ List.map htmlAttribute dragAttrs
-                , [ height (px 100)
-                  , width fill
-                  ]
-                ]
-            )
-            [ row
-                [ Events.onClick openFileBrowser
-                , pointer
-                , spacing 5
-                , padding 10
-                , Border.rounded 5
-                , Font.size 22
-                , centerX
-                , Border.width 1
-                , Border.color (rgba 0 0 0 1)
-                ]
-                [ Element.el [] (View.icon FeatherIcons.upload)
-                , Element.el [] (text "Upload")
-                ]
-            ]
-        )
+dropZoneContents : DropZone.State -> Msg -> List (Html Msg)
+dropZoneContents _ openFileBrowser =
+    [ h2 [] [ text "Files" ]
+    , span []
+        [ i [ class "fas fa-upload" ] []
+        , text "Drop your files here or "
+        , a [ onClick openFileBrowser ] [ text "browse for a file" ]
+        , text " to upload."
+        ]
     ]
 
 
+dropZoneAttrs : DropZone.State -> List a
+dropZoneAttrs dropzoneState =
+    []
 
---view : Model -> Element Msg
---view { upload, files, list, dropZone } =
---    div
---        [ class "container my-4" ]
---        [ div [ class "row" ]
---            [ div [ class "col card" ]
---                [ DropZone.view dropZone dropZoneConfig
---                , FileList.view list upload files listConfig
---                ]
---            ]
---        ]
---
---
---dropZoneContents : DropZone.State -> Msg -> List (Html.Html Msg)
---dropZoneContents _ openFileBrowser =
---    [ h2 [] [ text "Files" ]
---    , span []
---        [ i [ class "fas fa-upload" ] []
---        , text "Drop your files here or "
---        , a [ onClick openFileBrowser ] [ text "browse for a file" ]
---        , text " to upload."
---        ]
---    ]
---
---
---dropZoneAttrs : DropZone.State -> List (Html.Attribute Msg)
---dropZoneAttrs dropzoneState =
---    [ style "width" "100%"
---    , style "height" "150px"
---    , style "border-bottom"
---        (if DropZone.isActive dropzoneState then
---            "2px dashed #ddd"
---
---         else
---            "2px dashed transparent"
---        )
---    , style "background"
---        (if DropZone.isActive dropzoneState then
---            "#dff0d8"
---
---         else
---            "#f7f7f7"
---        )
---    ]
+
+
 ---- SUBSCRIPTIONS ----
 
 

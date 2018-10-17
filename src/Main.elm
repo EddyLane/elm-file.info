@@ -1,11 +1,9 @@
 module Main exposing (Model(..), Msg(..), init, main, subscriptions, update, view)
 
 import Browser
-import Element exposing (..)
-import Element.Background as Background
-import Element.Font as Font
 import FeatherIcons
 import Html
+import Html.Styled
 import Http
 import Page.DemoBasic as Demo
 import Task
@@ -64,67 +62,26 @@ update msg model =
 
 view : Model -> Browser.Document Msg
 view model =
-    { title = title model
-    , body =
-        [ layout
-            [ width fill
-            , height fill
-            , Font.family
-                [ Font.external
-                    { url = "https://fonts.googleapis.com/css?family=Roboto"
-                    , name = "Roboto"
-                    }
-                , Font.sansSerif
-                ]
-            ]
-            (column
-                [ width fill
-                , height fill
-                ]
-                [ row
-                    [ Background.color (rgba 0 0 0 1)
-                    , Font.color (rgba 1 1 1 1)
-                    , height (px 56)
-                    , width fill
-                    , alignTop
-                    ]
-                    [ text "This is the header" ]
-                , el
-                    [ width fill
-                    , height fill
-                    ]
-                    (body model)
-                ]
-            )
-        ]
-    }
-
-
-title : Model -> String
-title model =
-    case model of
-        Loaded _ ->
-            "Elm File demo"
-
-        Loading ->
-            "Elm File demo (loading)"
-
-        Errored ->
-            "Elm File demo (error)"
-
-
-body : Model -> Element Msg
-body model =
     case model of
         Loaded subModel ->
-            Demo.view subModel
-                |> map DemoMsg
+            { title = "Elm File demo #1"
+            , body =
+                [ subModel
+                    |> Demo.view
+                    |> Html.Styled.map DemoMsg
+                    |> Html.Styled.toUnstyled
+                ]
+            }
 
         Loading ->
-            View.icon FeatherIcons.loader
+            { title = "Elm File demo #1 (loading)"
+            , body = [ Html.text "Loading..." ]
+            }
 
         Errored ->
-            View.icon FeatherIcons.alertTriangle
+            { title = "Elm File demo #1 (error)"
+            , body = [ Html.text "Something went wrong" ]
+            }
 
 
 

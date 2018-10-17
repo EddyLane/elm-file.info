@@ -14,6 +14,7 @@ import registerServiceWorker from './registerServiceWorker';
     };
 
     uploadCmd.subscribe(({message, uploadId, data}) => {
+
         switch (message) {
 
             case msgs.encode:
@@ -32,6 +33,7 @@ import registerServiceWorker from './registerServiceWorker';
                 console.warn(`Unhandled message ${message}`);
 
         }
+
     });
 
     const handlers = {
@@ -89,8 +91,6 @@ import registerServiceWorker from './registerServiceWorker';
                 const uploadRequest = new XMLHttpRequest();
 
                 const cancelHandler = (msg) => {
-
-                    debugger;
 
                     if (msg.message !== msgs.cancel || uploadId !== msg.uploadId) {
                         return;
