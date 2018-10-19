@@ -1,5 +1,7 @@
 port module Page.DemoBasic exposing (Model, Msg, init, subscriptions, update, view)
 
+import Css exposing (..)
+import FeatherIcons
 import File.Data.UploadId as UploadId exposing (UploadId)
 import File.DropZone as DropZone
 import File.FileList as FileList
@@ -87,6 +89,21 @@ dropZoneConfig =
             { cmd = uploadCmd
             , sub = uploadSub
             }
+
+
+dropZoneContents : DropZone.State -> Msg -> List (Html Msg)
+dropZoneContents _ openFileBrowser =
+    [ FeatherIcons.upload
+        |> FeatherIcons.withSizeUnit "%"
+        |> FeatherIcons.withSize 100
+        |> FeatherIcons.toHtml []
+        |> fromUnstyled
+    ]
+
+
+dropZoneAttrs : DropZone.State -> List (Attribute msg)
+dropZoneAttrs dropzoneState =
+    []
 
 
 listConfig : FileList.Config () Attachment Msg
@@ -238,27 +255,13 @@ update msg model =
 
 view : Model -> Html Msg
 view { upload, files, list, dropZone } =
+    let
+        dropZoneView =
+            Just <| DropZone.view dropZone dropZoneConfig
+    in
     div [ class "container my-4" ]
-        [ div [ class "row py-3" ] [ DropZone.view dropZone dropZoneConfig ]
-        , div [ class "row py-3" ] [ Gallery.view files galleryConfig ]
+        [ div [ class "row py-3" ] [ Gallery.view dropZoneView files upload galleryConfig ]
         ]
-
-
-dropZoneContents : DropZone.State -> Msg -> List (Html Msg)
-dropZoneContents _ openFileBrowser =
-    [ h2 [] [ text "Files" ]
-    , span []
-        [ i [ class "fas fa-upload" ] []
-        , text "Drop your files here or "
-        , a [ onClick openFileBrowser ] [ text "browse for a file" ]
-        , text " to upload."
-        ]
-    ]
-
-
-dropZoneAttrs : DropZone.State -> List a
-dropZoneAttrs dropzoneState =
-    []
 
 
 
