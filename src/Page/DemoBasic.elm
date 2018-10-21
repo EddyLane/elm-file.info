@@ -67,10 +67,10 @@ uploadConfig =
         |> Upload.configSetStateMsg SetUploadState
         |> Upload.configUploadedMsg Uploaded
         |> Upload.configBase64EncodedMsg EncodeFile
-        |> Upload.configAllowedMimeTypes
-            [ "image/png"
-            , "image/jpeg"
-            ]
+        --        |> Upload.configAllowedMimeTypes
+        --            [ "image/png"
+        --            , "image/jpeg"
+        --            ]
         |> Upload.configPorts
             { cmd = uploadCmd
             , sub = uploadSub
@@ -83,27 +83,35 @@ dropZoneConfig =
         |> DropZone.configSetState SetDropZoneState
         |> DropZone.configUploadFiles UploadFiles
         |> DropZone.configBrowseFiles OpenFileBrowser
-        |> DropZone.configAttrs dropZoneAttrs
-        |> DropZone.configContents dropZoneContents
+        |> DropZone.configContents
+            (\_ openFileBrowser ->
+                [ button
+                    [ onClick openFileBrowser
+                    , css
+                        [ width (pct 100)
+                        , height (pct 100)
+                        , position absolute
+                        , left (px 0)
+                        , top (px 0)
+                        , cursor pointer
+                        , backgroundColor inherit
+                        , border (px 0)
+                        , color (hex "fff")
+                        ]
+                    ]
+                    [ FeatherIcons.plus
+                        |> FeatherIcons.withSizeUnit "%"
+                        |> FeatherIcons.withSize 50
+                        |> FeatherIcons.toHtml []
+                        |> fromUnstyled
+                    ]
+                ]
+            )
+        |> DropZone.configAttrs (always [])
         |> DropZone.configPorts
             { cmd = uploadCmd
             , sub = uploadSub
             }
-
-
-dropZoneContents : DropZone.State -> Msg -> List (Html Msg)
-dropZoneContents _ openFileBrowser =
-    [ FeatherIcons.upload
-        |> FeatherIcons.withSizeUnit "%"
-        |> FeatherIcons.withSize 100
-        |> FeatherIcons.toHtml []
-        |> fromUnstyled
-    ]
-
-
-dropZoneAttrs : DropZone.State -> List (Attribute msg)
-dropZoneAttrs dropzoneState =
-    []
 
 
 listConfig : FileList.Config () Attachment Msg
@@ -257,10 +265,22 @@ view : Model -> Html Msg
 view { upload, files, list, dropZone } =
     let
         dropZoneView =
-            Just <| DropZone.view dropZone dropZoneConfig
+            DropZone.view dropZone dropZoneConfig
     in
-    div [ class "container my-4" ]
-        [ div [ class "row py-3" ] [ Gallery.view dropZoneView files upload galleryConfig ]
+    div
+        [ css
+            [ backgroundImage (linearGradient (stop <| hex "444444") (stop <| hex "666666") [])
+            , width (pct 100)
+            , height (pct 100)
+            ]
+        ]
+        [ div
+            [ css
+                [ maxWidth (px 980)
+                , margin2 (px 0) auto
+                ]
+            ]
+            [ Gallery.view (Just dropZoneView) files upload galleryConfig ]
         ]
 
 
