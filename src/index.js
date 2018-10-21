@@ -2,31 +2,35 @@ import './main.css';
 import {Elm} from './Main.elm';
 import registerServiceWorker from './registerServiceWorker';
 
-(function ({ports: {uploadSub, uploadCmd}}) {
+(function ({ports: {uploadSub, uploadCmd, gallerySub, galleryCmd}}) {
 
 
-    const msgs = {
+    const uploadMsgs = {
         encode: 'encode',
         progress: 'progress',
         upload: 'upload',
         cancel: 'cancel',
-        openFileBrowser: 'open-file-browser'
+        openFileBrowser: 'open-file-browser',
     };
 
     uploadCmd.subscribe(({message, uploadId, data}) => {
 
         switch (message) {
 
-            case msgs.encode:
-                handlers.encode({uploadId, data});
+            case uploadMsgs.encode:
+                uploadHandlers.encode({uploadId, data});
                 break;
 
-            case msgs.upload:
-                handlers.upload({uploadId, data});
+            case uploadMsgs.upload:
+                uploadHandlers.upload({uploadId, data});
                 break;
 
-            case msgs.openFileBrowser:
-                handlers.openFileBrowser(data);
+            case uploadMsgs.openFileBrowser:
+                uploadHandlers.openFileBrowser(data);
+                break;
+
+            case uploadMsgs.getBoundedClientRects:
+                uploadHandlers.getBoundedClientRects(data);
                 break;
 
             default:
@@ -36,7 +40,59 @@ import registerServiceWorker from './registerServiceWorker';
 
     });
 
-    const handlers = {
+    const galleryMsgs = {
+        getBoundedClientRects: 'get-bounding-client-rects'
+    };
+
+    galleryCmd.subscribe(({message, data}) => {
+
+        switch (message) {
+
+            case galleryMsgs.getBoundedClientRects:
+                galleryHandlers.getBoundedClientRects(data);
+                break;
+
+            default:
+                console.warn(`Unhandled message ${message}`);
+
+        }
+
+    });
+
+    const galleryHandlers = {
+
+        getBoundedClientRects: (inputIds) => {
+
+            requestAnimationFrame(() => {
+                const rects = inputIds.reduce((acc, inputId) => {
+
+                    const el = document.getElementById(inputId);
+
+                    if (el) {
+                        const rect = el.getBoundingClientRect().toJSON();
+                        acc.push({ inputId, rect: rect });
+                    }
+
+                    return acc;
+
+                }, []);
+
+                console.log('rects', rects);
+
+                gallerySub.send({
+                    message: galleryMsgs.getBoundedClientRects,
+                    data: rects
+                });
+            });
+
+
+        }
+
+
+    };
+
+    const uploadHandlers = {
+
 
         openFileBrowser: (inputId) => {
             console.info(`[elm-file] openFileBrowser (${inputId})`);
@@ -60,7 +116,7 @@ import registerServiceWorker from './registerServiceWorker';
 
                 uploadSub.send({
                     uploadId,
-                    message: msgs.encode,
+                    message: uploadMsgs.encode,
                     data: result
                 });
 
@@ -72,7 +128,7 @@ import registerServiceWorker from './registerServiceWorker';
 
                 uploadSub.send({
                     uploadId,
-                    message: msgs.encode,
+                    message: uploadMsgs.encode,
                     data: {error: "Unable to read file"}
                 });
             };
@@ -92,7 +148,7 @@ import registerServiceWorker from './registerServiceWorker';
 
                 const cancelHandler = (msg) => {
 
-                    if (msg.message !== msgs.cancel || uploadId !== msg.uploadId) {
+                    if (msg.message !== uploadMsgs.cancel || uploadId !== msg.uploadId) {
                         return;
                     }
 
@@ -127,7 +183,7 @@ import registerServiceWorker from './registerServiceWorker';
 
                         uploadSub.send({
                             uploadId,
-                            message: msgs.progress,
+                            message: uploadMsgs.progress,
                             data: progress
                         });
 
@@ -142,7 +198,7 @@ import registerServiceWorker from './registerServiceWorker';
 
                     uploadSub.send({
                         uploadId,
-                        message: msgs.upload,
+                        message: uploadMsgs.upload,
                         data
                     });
 
@@ -154,7 +210,7 @@ import registerServiceWorker from './registerServiceWorker';
 
                     uploadSub.send({
                         uploadId,
-                        message: msgs.upload,
+                        message: uploadMsgs.upload,
                         data: {
                             error: `${uploadRequest.status}; ${uploadRequest.statusText} ${uploadRequest.responseText}`
                         }
@@ -178,7 +234,7 @@ import registerServiceWorker from './registerServiceWorker';
 
                     uploadSub.send({
                         uploadId,
-                        message: msgs.upload,
+                        message: uploadMsgs.upload,
                         data: {error: "Failed to decode Base64 contents"}
                     });
 

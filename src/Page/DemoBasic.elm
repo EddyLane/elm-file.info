@@ -30,6 +30,12 @@ port uploadCmd : Upload.PortCmdMsg -> Cmd msg
 port uploadSub : (Upload.PortCmdMsg -> msg) -> Sub msg
 
 
+port galleryCmd : Gallery.PortCmdMsg -> Cmd msg
+
+
+port gallerySub : (Gallery.PortCmdMsg -> msg) -> Sub msg
+
+
 
 ---- MODEL ----
 
@@ -39,12 +45,20 @@ type alias Model =
     , upload : Upload.State
     , files : List Attachment
     , list : FileList.State ()
+    , gallery : Gallery.State
     }
 
 
-init : Task Http.Error Model
+init : Task Http.Error ( Model, Cmd Msg )
 init =
     Task.map initialModel loadAttachments
+        |> Task.andThen
+            (\model ->
+                Task.succeed <|
+                    ( model
+                    , Gallery.getBoundingClientRects galleryConfig model.files model.upload
+                    )
+            )
 
 
 initialModel : List Attachment -> Model
@@ -53,6 +67,7 @@ initialModel files =
     , upload = Upload.init
     , files = files
     , list = FileList.init listConfig
+    , gallery = Gallery.init
     }
 
 
@@ -128,11 +143,16 @@ listConfig =
 galleryConfig : Gallery.Config Attachment Msg
 galleryConfig =
     Gallery.config NoOp
+        |> Gallery.configSetState SetGalleryState
         |> Gallery.configCancelUploadMsg CancelUpload
         |> Gallery.configIdFn .reference
         |> Gallery.configNameFn .fileName
         |> Gallery.configContentTypeFn .contentType
         |> Gallery.configThumbnailSrcFn (.reference >> (++) "http://localhost:3003/attachments/")
+        |> Gallery.configPorts
+            { cmd = galleryCmd
+            , sub = gallerySub
+            }
 
 
 
@@ -168,6 +188,7 @@ type Msg
     = NoOp
     | SetDropZoneState DropZone.State
     | SetListState (FileList.State ())
+    | SetGalleryState Gallery.State
     | SetUploadState Upload.State
     | OpenFileBrowser String
     | UploadFiles (List Drag.File)
@@ -179,6 +200,11 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        SetGalleryState gallery ->
+            ( { model | gallery = gallery }
+            , Cmd.none
+            )
+
         SetUploadState upload ->
             ( { model | upload = upload }
             , Cmd.none
@@ -240,12 +266,15 @@ update msg model =
                         |> Decode.decodeValue attachmentDecoder
                         |> Result.map (\file -> file :: model.files)
                         |> Result.withDefault model.files
+
+                upload =
+                    Upload.success uploadId model.upload
             in
             ( { model
-                | upload = Upload.success uploadId model.upload
+                | upload = upload
                 , files = files
               }
-            , Cmd.none
+            , Gallery.getBoundingClientRects galleryConfig files upload
             )
 
         Uploaded (Err ( uploadId, reason )) ->
@@ -262,7 +291,7 @@ update msg model =
 
 
 view : Model -> Html Msg
-view { upload, files, list, dropZone } =
+view { upload, files, list, dropZone, gallery } =
     let
         dropZoneView =
             DropZone.view dropZone dropZoneConfig
@@ -274,13 +303,7 @@ view { upload, files, list, dropZone } =
             , height (pct 100)
             ]
         ]
-        [ div
-            [ css
-                [ maxWidth (px 980)
-                , margin2 (px 0) auto
-                ]
-            ]
-            [ Gallery.view (Just dropZoneView) files upload galleryConfig ]
+        [ Gallery.view (Just dropZoneView) gallery files upload galleryConfig
         ]
 
 
@@ -293,4 +316,5 @@ subscriptions model =
     Sub.batch
         [ Upload.subscriptions uploadConfig model.upload
         , DropZone.subscriptions dropZoneConfig model.dropZone
+        , Gallery.subscriptions galleryConfig model.gallery
         ]

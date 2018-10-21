@@ -28,16 +28,16 @@ init =
 
 
 type Msg
-    = DemoLoaded (Result Http.Error Demo.Model)
+    = DemoLoaded (Result Http.Error ( Demo.Model, Cmd Demo.Msg ))
     | DemoMsg Demo.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case ( msg, model ) of
-        ( DemoLoaded (Ok subModel), _ ) ->
+        ( DemoLoaded (Ok ( subModel, subCmd )), _ ) ->
             ( Loaded subModel
-            , Cmd.none
+            , Cmd.map DemoMsg subCmd
             )
 
         ( DemoLoaded (Err _), _ ) ->
