@@ -1,5 +1,6 @@
 port module Page.DemoBasic exposing (Model, Msg, init, subscriptions, update, view)
 
+import Animation
 import Css exposing (..)
 import FeatherIcons
 import File.Data.UploadId as UploadId exposing (UploadId)
@@ -46,6 +47,7 @@ type alias Model =
     , files : List Attachment
     , list : FileList.State ()
     , gallery : Gallery.State
+    , test : Animation.State
     }
 
 
@@ -68,6 +70,7 @@ initialModel files =
     , files = files
     , list = FileList.init listConfig
     , gallery = Gallery.init
+    , test = Animation.style []
     }
 
 
@@ -143,6 +146,7 @@ listConfig =
 galleryConfig : Gallery.Config Attachment Msg
 galleryConfig =
     Gallery.config NoOp
+        |> Gallery.configAnimationMsg GalleryAnimation
         |> Gallery.configSetState SetGalleryState
         |> Gallery.configCancelUploadMsg CancelUpload
         |> Gallery.configIdFn .reference
@@ -195,6 +199,7 @@ type Msg
     | EncodeFile (Result ( UploadId, String ) ( UploadId, Upload.UploadingFile ))
     | Uploaded (Result ( UploadId, String ) ( UploadId, Encode.Value ))
     | CancelUpload UploadId
+    | GalleryAnimation String Animation.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -279,6 +284,11 @@ update msg model =
 
         Uploaded (Err ( uploadId, reason )) ->
             ( { model | upload = Upload.failure uploadId reason model.upload }
+            , Cmd.none
+            )
+
+        GalleryAnimation elementId animMsg ->
+            ( { model | gallery = Gallery.animate animMsg elementId model.gallery }
             , Cmd.none
             )
 

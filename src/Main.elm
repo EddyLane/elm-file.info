@@ -7,7 +7,6 @@ import Html.Styled
 import Http
 import Page.DemoBasic as Demo
 import Task
-import View.Helpers as View
 
 
 
